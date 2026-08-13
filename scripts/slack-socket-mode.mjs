@@ -24,7 +24,7 @@ const internalSecret =
   process.env.SLACK_SOCKET_MODE_INTERNAL_SECRET ?? randomBytes(32).toString("hex");
 
 const eveCommand = process.platform === "win32" ? "eve.cmd" : "eve";
-const eve = spawn(eveCommand, [mode], {
+const eve = spawn(eveCommand, [mode, ...process.argv.slice(3)], {
   env: {
     ...process.env,
     SLACK_SOCKET_MODE_INTERNAL_SECRET: internalSecret,

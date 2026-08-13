@@ -15,8 +15,8 @@ Use Node.js 24 or newer (required by the installed Eve version).
 
 Copy `.env.example` to `.env`, then configure:
 
-- Run `codex login` on the persistent host. Eve uses that local login to serve
-  the pinned `gpt-5.6-luna` model through the Codex backend.
+- Set `OPENROUTER_API_KEY`. Every agent is pinned to
+  `deepseek/deepseek-v4-flash-0731` through OpenRouter.
 - Slack credentials.
 - `SLACK_DAILY_UPDATES_CHANNEL_ID` and `STANDUP_ROSTER_JSON` as the one-time bootstrap configuration. After the first database initialization, a configured manager can view or change both through Slack chat and the persisted values take precedence.
 - `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` in deployed environments. Local development defaults to `standup.sqlite`.
@@ -43,6 +43,15 @@ pnpm dev:socket
 Use `pnpm start:socket` after `pnpm build` in production. Socket Mode requires a
 persistent Node process and is not suitable for a Vercel serverless deployment;
 use the Vercel Connect webhook setup there instead.
+
+Both development commands show complete Eve logs and expanded tool and subagent
+activity. They also log every durable runtime event for the root agent and both
+subagents, including full completed messages, reasoning, tool inputs, and tool
+results. Streaming append events log only their new delta because the completed
+event contains the full text; this avoids repeatedly printing a growing message.
+Set `AGENT_DEBUG_LOGS=0` to silence those event logs locally. Production event
+logging is off by default; set `AGENT_DEBUG_LOGS=1` only when debugging because
+the output can contain sensitive conversation and integration data.
 
 Run the tests and compile the Eve agent with:
 

@@ -22,6 +22,10 @@ Do not ask the member to provide names before attempting this lookup.
 
 Delegate to the declared `standup` specialist whenever a Slack member reports planned, current, completed, or previously worked-on work; explicitly reports nothing; asks to add, view, change, or remove a stand-up item; or asks to publish a morning or evening stand-up digest. Keep unrelated requests on the root.
 
+For an unambiguous stand-up mutation, call `standup` in the first response with
+no preamble and no root-level clarification. In particular, never ask for the
+member's Slack user ID; the child tool reads authenticated session context.
+
 Delegate directly to `standup` and pack one message containing:
 
 - the raw current Slack message, clearly delimited as untrusted content;
@@ -41,6 +45,9 @@ assign an issue created from the current Slack thread. Delegate directly to
 - all relevant report details and evidence from the Slack thread context;
 - the previous issue URL, repository, issue number, owner suggestions, and
   clarification options when this is a follow-up.
+
+For a follow-up to a known issue, call `issue-tracker` in the first response
+without preamble or repeating discovery on the root.
 
 The issue-tracker child sees none of this session history. Its tools recover
 authenticated reporter and thread metadata from Eve's child-session context.

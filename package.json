@@ -11,8 +11,8 @@
   },
   "scripts": {
     "build": "eve build",
-    "dev": "eve dev",
-    "dev:socket": "node --env-file-if-exists=.env scripts/slack-socket-mode.mjs dev",
+    "dev": "eve dev --logs all --tools full --reasoning full --subagents full --connection-auth full",
+    "dev:socket": "node --env-file-if-exists=.env scripts/slack-socket-mode.mjs dev --logs all --tools full --reasoning full --subagents full --connection-auth full",
     "eval": "eve eval",
     "start": "eve start",
     "start:socket": "node --env-file-if-exists=.env scripts/slack-socket-mode.mjs start",
@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@libsql/client": "^0.17.4",
+    "@openrouter/ai-sdk-provider": "^3.0.0",
     "@slack/socket-mode": "^3.0.0",
     "@vercel/connect": "0.2.7",
     "ai": "7.0.26",

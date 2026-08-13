@@ -150,6 +150,73 @@ test("a midday accomplishment waits for the scheduled evening digest", async (t)
   assert.match(slack.published[0]?.text ?? "", /Fixed the production alert/);
 });
 
+test("refreshing today rewrites a digest that was published under a stale date", async (t) => {
+  const client = createClient({ url: "file::memory:" });
+  t.after(() => client.close());
+  const service = createStandupService({
+    client,
+    initialDailyUpdatesChannelId: "C_DAILY",
+    roster: [
+      { slackUserId: "U_ALICE", displayName: "Alice", role: "employee" },
+      { slackUserId: "U_MANAGER", displayName: "Mina", role: "manager" },
+    ],
+    now: () => new Date("2026-08-13T11:37:00.000Z"),
+  });
+  await service.initialize();
+  const slack = new FakeSlackGateway();
+  const workflow = createStandupWorkflow({ service, slack });
+
+  await workflow.publishDigest("U_MANAGER", "2025-02-14", "evening");
+  await service.createEntry({
+    actorSlackUserId: "U_ALICE",
+    period: "evening",
+    text: "Built the issue tracker as a subagent",
+  });
+
+  const refreshed = await workflow.refreshDigest("2026-08-13", "evening");
+
+  assert.equal(slack.published.length, 1);
+  assert.equal(slack.updated.length, 1);
+  assert.equal(refreshed?.standupDate, "2026-08-13");
+  assert.match(slack.updated[0]?.text ?? "", /Evening stand-up — August 13, 2026/);
+  assert.match(slack.updated[0]?.text ?? "", /Built the issue tracker as a subagent/);
+  assert.deepEqual(await service.getDigestMessage("2026-08-13", "evening"), {
+    channelId: "C_DAILY",
+    messageTs: "message-1",
+  });
+  assert.equal(await service.getDigestMessage("2025-02-14", "evening"), null);
+});
+
+test("refreshing today leaves yesterday's evening digest untouched", async (t) => {
+  const client = createClient({ url: "file::memory:" });
+  t.after(() => client.close());
+  const service = createStandupService({
+    client,
+    initialDailyUpdatesChannelId: "C_DAILY",
+    roster: [
+      { slackUserId: "U_ALICE", displayName: "Alice", role: "employee" },
+      { slackUserId: "U_MANAGER", displayName: "Mina", role: "manager" },
+    ],
+    now: () => new Date("2026-08-13T08:00:00.000Z"),
+  });
+  await service.initialize();
+  const slack = new FakeSlackGateway();
+  const workflow = createStandupWorkflow({ service, slack });
+
+  await workflow.publishDigest("U_MANAGER", "2026-08-12", "evening");
+  await service.createEntry({
+    actorSlackUserId: "U_ALICE",
+    period: "evening",
+    text: "Fixed the production alert",
+  });
+
+  const refreshed = await workflow.refreshDigest("2026-08-13", "evening");
+
+  assert.equal(refreshed, null);
+  assert.equal(slack.updated.length, 0);
+  assert.equal(await service.getDigestMessage("2026-08-12", "evening")?.messageTs, "message-1");
+});
+
 test("a manager can explicitly publish a saved morning digest", async (t) => {
   const client = createClient({ url: "file::memory:" });
   t.after(() => client.close());

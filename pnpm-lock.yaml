@@ -11,6 +11,9 @@ importers:
       '@libsql/client':
         specifier: ^0.17.4
         version: 0.17.4
+      '@openrouter/ai-sdk-provider':
+        specifier: ^3.0.0
+        version: 3.0.0(ai@7.0.26(zod@4.4.3))(zod@4.4.3)
       '@slack/socket-mode':
         specifier: ^3.0.0
         version: 3.0.0(undici@7.29.0)
@@ -142,6 +145,13 @@ packages:
 
   '@nodable/entities@3.0.0':
     resolution: {integrity: sha512-8L9xFeTYKhm49xfIypoe2W5wV1m/3Z58kT+7kR9A8OyFxcPduI4VmxaUMQyKYrRjUoLLSXv6EKKID5Tvj9cUVw==}
+
+  '@openrouter/ai-sdk-provider@3.0.0':
+    resolution: {integrity: sha512-m9XTSWoODH2RM5OsZpaGiN7QRR8cdP5paBWq699Tu3JVmGPBKT8xF8XwV0ZBVVsjikD/JgWfak4VSsTR4wAVbg==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      ai: ^7.0.0
+      zod: ^3.25.76 || ^4.1.8
 
   '@oxc-project/types@0.143.0':
     resolution: {integrity: sha512-u6JZdLBTLotrNC9Vd6vPssINdzcCzleKAH6EJKImQb7GtYvX5keN2dxkoK44stCc4tffE6QQRtZTXVSzsLUlWA==}
@@ -1183,6 +1193,11 @@ snapshots:
   '@neon-rs/load@0.0.4': {}
 
   '@nodable/entities@3.0.0': {}
+
+  '@openrouter/ai-sdk-provider@3.0.0(ai@7.0.26(zod@4.4.3))(zod@4.4.3)':
+    dependencies:
+      ai: 7.0.26(zod@4.4.3)
+      zod: 4.4.3
 
   '@oxc-project/types@0.143.0': {}
 
