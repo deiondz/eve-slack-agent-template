@@ -155,3 +155,85 @@ test("replaying the same durable tool call does not duplicate an entry", async (
     1,
   );
 });
+
+test("a manager can persist chat-managed channel and roster configuration", async (t) => {
+  const client = createClient({ url: "file::memory:" });
+  t.after(() => client.close());
+  const service = createStandupService({
+    client,
+    initialDailyUpdatesChannelId: "C_OLD",
+    roster: [
+      { slackUserId: "U_ALICE", displayName: "Alice", role: "employee" },
+      { slackUserId: "U_MANAGER", displayName: "Mina", role: "manager" },
+    ],
+  });
+  await service.initialize();
+
+  const configuration = await service.updateConfiguration({
+    actorSlackUserId: "U_MANAGER",
+    dailyUpdatesChannelId: "C_NEW",
+    roster: [
+      { slackUserId: "U_ALICE", displayName: "Alice A.", role: "employee" },
+      { slackUserId: "U_BOB", displayName: "Bob", role: "employee" },
+      { slackUserId: "U_MANAGER", displayName: "Mina", role: "manager" },
+    ],
+  });
+
+  assert.equal(configuration.dailyUpdatesChannelId, "C_NEW");
+  assert.deepEqual(await service.getConfiguration("U_MANAGER"), configuration);
+  assert.deepEqual(
+    (await service.getDigest("2026-08-13", "morning")).map(
+      (employee) => employee.displayName,
+    ),
+    ["Alice A.", "Bob"],
+  );
+});
+
+test("employees cannot change stand-up configuration", async (t) => {
+  const client = createClient({ url: "file::memory:" });
+  t.after(() => client.close());
+  const service = createStandupService({
+    client,
+    initialDailyUpdatesChannelId: "C_DAILY",
+    roster: [
+      { slackUserId: "U_ALICE", displayName: "Alice", role: "employee" },
+      { slackUserId: "U_MANAGER", displayName: "Mina", role: "manager" },
+    ],
+  });
+  await service.initialize();
+
+  await assert.rejects(
+    service.updateConfiguration({
+      actorSlackUserId: "U_ALICE",
+      dailyUpdatesChannelId: "C_OTHER",
+    }),
+    /only a configured stand-up manager/i,
+  );
+});
+
+test("persisted configuration is not overwritten by environment seeds", async (t) => {
+  const client = createClient({ url: "file::memory:" });
+  t.after(() => client.close());
+  const first = createStandupService({
+    client,
+    initialDailyUpdatesChannelId: "C_SEED",
+    roster: [{ slackUserId: "U_MANAGER", displayName: "Mina", role: "manager" }],
+  });
+  await first.initialize();
+  await first.updateConfiguration({
+    actorSlackUserId: "U_MANAGER",
+    dailyUpdatesChannelId: "C_CHAT",
+  });
+
+  const restarted = createStandupService({
+    client,
+    initialDailyUpdatesChannelId: "C_CHANGED_ENV",
+    roster: [{ slackUserId: "U_OTHER", displayName: "Other", role: "manager" }],
+  });
+  await restarted.initialize();
+
+  assert.equal(await restarted.getDailyUpdatesChannelId(), "C_CHAT");
+  assert.deepEqual(await restarted.getRoster(), [
+    { slackUserId: "U_MANAGER", displayName: "Mina", role: "manager" },
+  ]);
+});

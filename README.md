@@ -10,10 +10,11 @@ Use Node.js 24 or newer (required by the installed Eve version).
 Copy `.env.example` to `.env`, then configure:
 
 - `OPENROUTER_API_KEY` for the pinned `deepseek/deepseek-v4-flash-0731` model.
-- Slack credentials, `SLACK_DAILY_UPDATES_CHANNEL_ID`, and `STANDUP_ROSTER_JSON`.
+- Slack credentials and a random `STANDUP_DELEGATION_SECRET`.
+- `SLACK_DAILY_UPDATES_CHANNEL_ID` and `STANDUP_ROSTER_JSON` as the one-time bootstrap configuration. After the first database initialization, a configured manager can view or change both through Slack chat and the persisted values take precedence.
 - `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` in deployed environments. Local development defaults to `standup.sqlite`.
 
-The Slack app needs bot scopes for mentions, posting/updating messages, opening DMs, and reading DM history (`app_mentions:read`, `chat:write`, `im:write`, and `im:history`). Subscribe it to `app_mention` and `message.im` events.
+The Slack app needs bot scopes for mentions, posting/updating messages, opening DMs, and reading DM history (`app_mentions:read`, `chat:write`, `im:write`, and `im:history`). Subscribe it to `app_mention` and `message.im` events. For Socket Mode, enable it in the app manifest and create an app-level token with `connections:write`; set that `xapp-...` value as `SLACK_APP_TOKEN` and the installed bot's `xoxb-...` value as `SLACK_BOT_TOKEN`.
 
 When using Vercel Connect, link the project and pull environment variables:
 
@@ -25,8 +26,13 @@ vercel env pull
 Then, run the development server:
 
 ```bash
-pnpm dev
+pnpm dev:socket
 ```
+
+`dev:socket` starts Eve and a Socket Mode client in one long-running process.
+Use `pnpm start:socket` after `pnpm build` in production. Socket Mode requires a
+persistent Node process and is not suitable for a Vercel serverless deployment;
+use the Vercel Connect webhook setup there instead.
 
 Run the tests and compile the Eve agent with:
 
@@ -43,6 +49,13 @@ Production schedules run Monday-Friday in `Asia/Kolkata`:
 - 17:00 — remind only employees still awaiting an evening response.
 
 Eve writes Vercel cron expressions in UTC. In development, trigger schedules manually through `POST /eve/v1/dev/schedules/morning-standup`, `evening-standup`, or `evening-reminder`.
+
+The root agent owns Slack and schedules. Stand-up conversations are delegated to the declared `agent/subagents/standup/` specialist, which has the stand-up skill and CRUD tools. The root creates a short-lived signed delegation envelope so child tools authorize against the authenticated Slack actor rather than trusting message text.
+
+Configured managers can say things like “show the stand-up configuration,”
+“use channel `C0123456789` for daily updates,” or “add `<@U123>` to the
+stand-up roster as Sam.” Roster changes are persisted in the stand-up database;
+the agent reads the current roster before applying partial changes.
 
 You can start editing the agent by modifying `agent/agent.ts`. Its behavior is defined in `agent/instructions.md`, and tools live in `agent/tools/`. The agent auto-updates as you edit the files.
 

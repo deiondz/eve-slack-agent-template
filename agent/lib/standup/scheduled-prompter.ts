@@ -17,7 +17,7 @@ export function createScheduledEmployeePrompter(
       message: [
         `Send this stand-up prompt to <@${slackUserId}> exactly once:`,
         prompt,
-        "Invite a natural-language reply. Do not call stand-up tools in this turn.",
+        "Invite a natural-language reply. Do not delegate in this turn; only send the prompt.",
       ].join("\n"),
       target: { channelId },
       auth: appAuth,

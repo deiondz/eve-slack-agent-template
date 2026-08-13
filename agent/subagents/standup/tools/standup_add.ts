@@ -1,13 +1,14 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 
-import { getStandupRuntime } from "../lib/standup/runtime.js";
-import { slackActorFrom } from "../lib/standup/tool-context.js";
+import { getStandupRuntime } from "../../../lib/standup/runtime.js";
+import { verifyStandupDelegation } from "../../../lib/standup/delegation.js";
 
 export default defineTool({
   description:
     "Append one or more morning plans or evening accomplishments. Use one call for mixed updates.",
   inputSchema: z.object({
+    delegationToken: z.string().min(1),
     entries: z
       .array(
         z.object({
@@ -18,19 +19,21 @@ export default defineTool({
       .min(1)
       .max(20),
     employeeSlackUserId: z.string().min(1).optional(),
-    standupDate: z.iso.date().optional(),
   }),
   async execute(input, ctx) {
-    const actorSlackUserId = slackActorFrom(ctx);
+    const delegation = verifyStandupDelegation(
+      input.delegationToken,
+      ctx.session.parent?.rootSessionId ?? "",
+    );
     const { service, workflow } = await getStandupRuntime();
     const created = await service.createEntries(
       input.entries.map((entry, index) => ({
-          actorSlackUserId,
-          employeeSlackUserId: input.employeeSlackUserId,
-          standupDate: input.standupDate,
-          period: entry.period,
-          text: entry.text,
-          idempotencyKey: `${ctx.callId}:${index}`,
+        actorSlackUserId: delegation.actorSlackUserId,
+        employeeSlackUserId: input.employeeSlackUserId,
+        standupDate: delegation.standupDate,
+        period: entry.period,
+        text: entry.text,
+        idempotencyKey: `${ctx.callId}:${index}`,
       })),
     );
     const affected = new Set(

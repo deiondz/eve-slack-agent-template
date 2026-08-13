@@ -13,18 +13,12 @@ const rosterSchema = z.array(
 export interface StandupConfig {
   databaseUrl: string;
   databaseAuthToken?: string;
-  dailyUpdatesChannelId: string;
+  initialDailyUpdatesChannelId?: string;
   roster: RosterMember[];
 }
 
 export function getStandupConfig(): StandupConfig {
   const rosterJson = process.env.STANDUP_ROSTER_JSON;
-  if (!rosterJson) throw new Error("STANDUP_ROSTER_JSON is required.");
-
-  const dailyUpdatesChannelId = process.env.SLACK_DAILY_UPDATES_CHANNEL_ID;
-  if (!dailyUpdatesChannelId) {
-    throw new Error("SLACK_DAILY_UPDATES_CHANNEL_ID is required.");
-  }
 
   const databaseUrl = process.env.TURSO_DATABASE_URL ?? "file:standup.sqlite";
   if (process.env.VERCEL && !process.env.TURSO_DATABASE_URL) {
@@ -36,7 +30,7 @@ export function getStandupConfig(): StandupConfig {
   return {
     databaseUrl,
     databaseAuthToken: process.env.TURSO_AUTH_TOKEN,
-    dailyUpdatesChannelId,
-    roster: rosterSchema.parse(JSON.parse(rosterJson)),
+    initialDailyUpdatesChannelId: process.env.SLACK_DAILY_UPDATES_CHANNEL_ID,
+    roster: rosterJson ? rosterSchema.parse(JSON.parse(rosterJson)) : [],
   };
 }

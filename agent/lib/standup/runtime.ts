@@ -14,14 +14,14 @@ async function createRuntime() {
     url: config.databaseUrl,
     authToken: config.databaseAuthToken,
   });
-  const service = createStandupService({ client, roster: config.roster });
+  const service = createStandupService({
+    client,
+    roster: config.roster,
+    initialDailyUpdatesChannelId: config.initialDailyUpdatesChannelId,
+  });
   await service.initialize();
   const slack = createSlackStandupGateway(slackCredentials.botToken);
-  const workflow = createStandupWorkflow({
-    service,
-    slack,
-    dailyUpdatesChannelId: config.dailyUpdatesChannelId,
-  });
+  const workflow = createStandupWorkflow({ service, slack });
   return { service, workflow };
 }
 

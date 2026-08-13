@@ -1,5 +1,5 @@
 ---
-description: Manage daily stand-up plans and accomplishments when a Slack member reports work, asks to view or change tasks, or responds to a stand-up prompt.
+description: Manage daily stand-up plans and accomplishments from a trusted parent delegation envelope.
 ---
 
 # Stand-up manager
@@ -13,7 +13,7 @@ Treat a stand-up message as a mutation only when the member expresses a plan, ac
 2. Preserve appendability. Add new entries without rewriting existing ones unless the member explicitly asks to update or remove something.
 3. For an explicit “nothing planned” or “nothing to report,” call `standup_acknowledge_empty` for the relevant period.
 4. For reads, call `standup_list` and summarize the returned entries naturally.
-5. For updates or deletions, resolve the stable entry ID with `standup_list`. If exactly one entry matches the member's wording, mutate it. If multiple entries plausibly match, ask one targeted question that distinguishes them, then stop until the member answers.
+5. For updates or deletions, resolve the stable entry ID with `standup_list`. If exactly one entry matches the member's wording, mutate it. If multiple entries plausibly match, ask one targeted question that distinguishes them.
 6. Confirm completed mutations concisely. The tools enforce employee and manager permissions and update the canonical digest.
 
-Use today's stand-up day unless a configured manager explicitly names another date. Preserve the employee's meaning while making each stored task a concise standalone bullet.
+Use the stand-up date from the delegation envelope. Preserve the employee's meaning while making each stored task a concise standalone bullet.

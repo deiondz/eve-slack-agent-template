@@ -34,6 +34,7 @@ test("morning workflow publishes one canonical digest and prompts every employee
   t.after(() => client.close());
   const service = createStandupService({
     client,
+    initialDailyUpdatesChannelId: "C_DAILY",
     roster: [
       { slackUserId: "U_ALICE", displayName: "Alice", role: "employee" },
       { slackUserId: "U_BOB", displayName: "Bob", role: "employee" },
@@ -44,7 +45,6 @@ test("morning workflow publishes one canonical digest and prompts every employee
   const workflow = createStandupWorkflow({
     service,
     slack,
-    dailyUpdatesChannelId: "C_DAILY",
   });
 
   await workflow.runMorning("2026-08-13", (slackUserId, text) =>
@@ -76,6 +76,7 @@ test("evening reminder goes only to employees still awaiting an update", async (
   t.after(() => client.close());
   const service = createStandupService({
     client,
+    initialDailyUpdatesChannelId: "C_DAILY",
     roster: [
       { slackUserId: "U_ALICE", displayName: "Alice", role: "employee" },
       { slackUserId: "U_BOB", displayName: "Bob", role: "employee" },
@@ -88,7 +89,6 @@ test("evening reminder goes only to employees still awaiting an update", async (
   const workflow = createStandupWorkflow({
     service,
     slack,
-    dailyUpdatesChannelId: "C_DAILY",
   });
 
   await workflow.runEveningPrompt("2026-08-13", (slackUserId, text) =>
@@ -126,6 +126,7 @@ test("a midday accomplishment waits for the scheduled evening digest", async (t)
   t.after(() => client.close());
   const service = createStandupService({
     client,
+    initialDailyUpdatesChannelId: "C_DAILY",
     roster: [{ slackUserId: "U_ALICE", displayName: "Alice", role: "employee" }],
     now: () => new Date("2026-08-13T08:00:00.000Z"),
   });
@@ -134,7 +135,6 @@ test("a midday accomplishment waits for the scheduled evening digest", async (t)
   const workflow = createStandupWorkflow({
     service,
     slack,
-    dailyUpdatesChannelId: "C_DAILY",
   });
 
   await service.createEntry({

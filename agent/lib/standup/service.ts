@@ -32,6 +32,7 @@ export interface DigestEmployee {
 interface ServiceOptions {
   client: Client;
   roster: readonly RosterMember[];
+  initialDailyUpdatesChannelId?: string;
   now?: () => Date;
 }
 
@@ -73,11 +74,44 @@ function rowToEntry(row: Record<string, unknown>): StandupEntry {
 export function createStandupService({
   client,
   roster,
+  initialDailyUpdatesChannelId,
   now = () => new Date(),
 }: ServiceOptions) {
-  const memberById = new Map(roster.map((member) => [member.slackUserId, member]));
+  async function getRoster(): Promise<RosterMember[]> {
+    const result = await client.execute(
+      `SELECT slack_user_id, display_name, role FROM standup_roster
+        ORDER BY position ASC, slack_user_id ASC`,
+    );
+    return result.rows.map((row) => ({
+      slackUserId: String(row.slack_user_id),
+      displayName: String(row.display_name),
+      role: String(row.role) as RosterMember["role"],
+    }));
+  }
 
-  function targetFor(input: EntrySelector): string {
+  async function requireManager(actorSlackUserId: string): Promise<void> {
+    const actor = (await getRoster()).find(
+      (member) => member.slackUserId === actorSlackUserId,
+    );
+    if (actor?.role !== "manager") {
+      throw new Error(
+        "Only a configured stand-up manager can change stand-up configuration.",
+      );
+    }
+  }
+
+  async function getOptionalDailyUpdatesChannelId(): Promise<string | null> {
+    const result = await client.execute({
+      sql: "SELECT value FROM standup_settings WHERE key = ?",
+      args: ["daily_updates_channel_id"],
+    });
+    return result.rows[0]?.value ? String(result.rows[0].value) : null;
+  }
+
+  async function targetFor(input: EntrySelector): Promise<string> {
+    const memberById = new Map(
+      (await getRoster()).map((member) => [member.slackUserId, member]),
+    );
     const actor = memberById.get(input.actorSlackUserId);
     if (!actor) throw new Error("This Slack member is not configured for stand-ups.");
     const target = input.employeeSlackUserId ?? input.actorSlackUserId;
@@ -88,10 +122,12 @@ export function createStandupService({
     return target;
   }
 
-  function dateFor(input: EntrySelector): string {
+  async function dateFor(input: EntrySelector): Promise<string> {
     const today = standupDateFor(now());
     const requested = input.standupDate ?? today;
-    const actor = memberById.get(input.actorSlackUserId);
+    const actor = (await getRoster()).find(
+      (member) => member.slackUserId === input.actorSlackUserId,
+    );
     if (actor?.role !== "manager" && requested !== today) {
       throw new Error("Employees can manage entries only for the current stand-up day.");
     }
@@ -112,12 +148,12 @@ export function createStandupService({
       throw new Error("Stand-up entry not found.");
     }
     const entry = rowToEntry(row);
-    targetFor({
+    await targetFor({
       actorSlackUserId: input.actorSlackUserId,
       employeeSlackUserId: entry.employeeSlackUserId,
     });
     if ((allowDeleted && row.deleted_at) || entry.text === replayText) return entry;
-    dateFor({
+    await dateFor({
       actorSlackUserId: input.actorSlackUserId,
       standupDate: entry.standupDate,
     });
@@ -127,12 +163,29 @@ export function createStandupService({
   async function createEntries(
     inputs: readonly CreateEntryInput[],
   ): Promise<StandupEntry[]> {
-    const prepared = inputs.map((input) => {
+    const replayed = await Promise.all(
+      inputs.map(async (input) => {
+        if (!input.idempotencyKey) return null;
+        const result = await client.execute({
+          sql: "SELECT * FROM standup_entries WHERE idempotency_key = ?",
+          args: [input.idempotencyKey],
+        });
+        return result.rows[0] ? rowToEntry(result.rows[0]) : null;
+      }),
+    );
+    if (replayed.every((entry) => entry !== null)) {
+      return replayed as StandupEntry[];
+    }
+    if (replayed.some((entry) => entry !== null)) {
+      throw new Error("A mixed stand-up update was only partially persisted.");
+    }
+
+    const prepared = await Promise.all(inputs.map(async (input) => {
       const timestamp = now().toISOString();
       const entry: StandupEntry = {
         id: randomUUID(),
-        standupDate: dateFor(input),
-        employeeSlackUserId: targetFor(input),
+        standupDate: await dateFor(input),
+        employeeSlackUserId: await targetFor(input),
         period: input.period,
         text: input.text.trim(),
         createdAt: timestamp,
@@ -140,7 +193,7 @@ export function createStandupService({
       };
       if (!entry.text) throw new Error("Stand-up entry text cannot be empty.");
       return { entry, idempotencyKey: input.idempotencyKey };
-    });
+    }));
 
     await client.batch(
       prepared.map(({ entry, idempotencyKey }) => ({
@@ -177,6 +230,42 @@ export function createStandupService({
 
   return {
     async initialize() {
+      await client.execute(`
+        CREATE TABLE IF NOT EXISTS standup_settings (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        )
+      `);
+      await client.execute(`
+        CREATE TABLE IF NOT EXISTS standup_roster (
+          slack_user_id TEXT PRIMARY KEY,
+          display_name TEXT NOT NULL,
+          role TEXT NOT NULL CHECK (role IN ('employee', 'manager')),
+          position INTEGER NOT NULL
+        )
+      `);
+      const configurationInitialized = await client.execute({
+        sql: "SELECT value FROM standup_settings WHERE key = ?",
+        args: ["configuration_initialized"],
+      });
+      if (!configurationInitialized.rows[0] && roster.length > 0) {
+        const seedStatements = roster.map((member, position) => ({
+          sql: `INSERT INTO standup_roster
+            (slack_user_id, display_name, role, position) VALUES (?, ?, ?, ?)`,
+          args: [member.slackUserId, member.displayName, member.role, position],
+        }));
+        if (initialDailyUpdatesChannelId) {
+          seedStatements.push({
+            sql: "INSERT INTO standup_settings (key, value) VALUES (?, ?)",
+            args: ["daily_updates_channel_id", initialDailyUpdatesChannelId],
+          });
+        }
+        seedStatements.push({
+          sql: "INSERT INTO standup_settings (key, value) VALUES (?, ?)",
+          args: ["configuration_initialized", "true"],
+        });
+        await client.batch(seedStatements, "write");
+      }
       await client.execute(`
         CREATE TABLE IF NOT EXISTS standup_entries (
           id TEXT PRIMARY KEY,
@@ -243,8 +332,8 @@ export function createStandupService({
     createEntries,
 
     async listEntries(input: EntrySelector): Promise<StandupEntry[]> {
-      const employeeSlackUserId = targetFor(input);
-      const standupDate = dateFor(input);
+      const employeeSlackUserId = await targetFor(input);
+      const standupDate = await dateFor(input);
       const conditions = [
         "standup_date = ?",
         "employee_slack_user_id = ?",
@@ -296,8 +385,8 @@ export function createStandupService({
         });
         if (replay.rows[0]) return String(replay.rows[0].standup_date);
       }
-      const employeeSlackUserId = targetFor(input);
-      const standupDate = dateFor(input);
+      const employeeSlackUserId = await targetFor(input);
+      const standupDate = await dateFor(input);
       await client.execute({
         sql: `INSERT INTO standup_acknowledgements
           (standup_date, employee_slack_user_id, period, created_at, idempotency_key)
@@ -340,7 +429,7 @@ export function createStandupService({
         ),
       );
 
-      return roster
+      return (await getRoster())
         .filter((member) => member.role === "employee")
         .map((member) => {
           const employeeEntries = entries.filter(
@@ -370,7 +459,7 @@ export function createStandupService({
           .filter((employee) => employee.response === "awaiting")
           .map((employee) => employee.employeeSlackUserId),
       );
-      return roster.filter(
+      return (await getRoster()).filter(
         (member) => member.role === "employee" && pendingIds.has(member.slackUserId),
       );
     },
@@ -402,6 +491,65 @@ export function createStandupService({
             message_ts = excluded.message_ts`,
         args: [input.standupDate, input.period, input.channelId, input.messageTs],
       });
+    },
+
+    getRoster,
+
+    async getDailyUpdatesChannelId(): Promise<string> {
+      const channelId = await getOptionalDailyUpdatesChannelId();
+      if (!channelId) {
+        throw new Error(
+          "The daily updates channel is not configured. Ask a stand-up manager to set it in chat.",
+        );
+      }
+      return String(channelId);
+    },
+
+    async getConfiguration(actorSlackUserId: string) {
+      await requireManager(actorSlackUserId);
+      return {
+        dailyUpdatesChannelId: await getOptionalDailyUpdatesChannelId(),
+        roster: await getRoster(),
+      };
+    },
+
+    async updateConfiguration(input: {
+      actorSlackUserId: string;
+      dailyUpdatesChannelId?: string;
+      roster?: readonly RosterMember[];
+    }) {
+      await requireManager(input.actorSlackUserId);
+      if (input.dailyUpdatesChannelId === undefined && input.roster === undefined) {
+        throw new Error("Provide a daily updates channel or a stand-up roster.");
+      }
+      if (input.roster && !input.roster.some((member) => member.role === "manager")) {
+        throw new Error("The stand-up roster must include at least one manager.");
+      }
+
+      const statements: Array<{ sql: string; args: Array<string | number> }> = [];
+      if (input.dailyUpdatesChannelId !== undefined) {
+        statements.push({
+          sql: `INSERT INTO standup_settings (key, value) VALUES (?, ?)
+            ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+          args: ["daily_updates_channel_id", input.dailyUpdatesChannelId],
+        });
+      }
+      if (input.roster !== undefined) {
+        statements.push({ sql: "DELETE FROM standup_roster", args: [] });
+        statements.push(
+          ...input.roster.map((member, position) => ({
+            sql: `INSERT INTO standup_roster
+              (slack_user_id, display_name, role, position) VALUES (?, ?, ?, ?)`,
+            args: [member.slackUserId, member.displayName, member.role, position],
+          })),
+        );
+      }
+      await client.batch(statements, "write");
+      return {
+        dailyUpdatesChannelId:
+          input.dailyUpdatesChannelId ?? (await getOptionalDailyUpdatesChannelId()),
+        roster: await getRoster(),
+      };
     },
   };
 }

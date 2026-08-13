@@ -1,3 +1,6 @@
+allowBuilds:
+  '@mongodb-js/zstd': true
+  node-liblzma: false
 minimumReleaseAgeExclude:
   - "@ai-sdk/*"
   - "@vercel/*"

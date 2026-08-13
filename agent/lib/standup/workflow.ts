@@ -13,13 +13,11 @@ export interface StandupSlackGateway {
 interface WorkflowOptions {
   service: StandupService;
   slack: StandupSlackGateway;
-  dailyUpdatesChannelId: string;
 }
 
 export function createStandupWorkflow({
   service,
   slack,
-  dailyUpdatesChannelId,
 }: WorkflowOptions) {
   async function refreshDigest(standupDate: string, period: StandupPeriod) {
     const employees = await service.getDigest(standupDate, period);
@@ -51,6 +49,7 @@ export function createStandupWorkflow({
       period,
       employees: await service.getDigest(standupDate, period),
     });
+    const dailyUpdatesChannelId = await service.getDailyUpdatesChannelId();
     const posted = await slack.publishMessage(
       dailyUpdatesChannelId,
       text,
