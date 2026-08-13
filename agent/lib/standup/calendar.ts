@@ -11,3 +11,11 @@ export function standupDateFor(date = new Date()): string {
     parts.find((part) => part.type === type)?.value;
   return `${value("year")}-${value("month")}-${value("day")}`;
 }
+
+export function currentPublicationDate(
+  modelSuppliedDate: string | undefined,
+  now = new Date(),
+): string {
+  void modelSuppliedDate;
+  return standupDateFor(now);
+}

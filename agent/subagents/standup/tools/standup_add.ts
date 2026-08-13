@@ -2,13 +2,12 @@ import { defineTool } from "eve/tools";
 import { z } from "zod";
 
 import { getStandupRuntime } from "../../../lib/standup/runtime.js";
-import { verifyStandupDelegation } from "../../../lib/standup/delegation.js";
+import { requireDelegatedSlackActor } from "../../../lib/slack-session.js";
 
 export default defineTool({
   description:
     "Append one or more morning plans or evening accomplishments. Use one call for mixed updates.",
   inputSchema: z.object({
-    delegationToken: z.string().min(1),
     entries: z
       .array(
         z.object({
@@ -19,18 +18,16 @@ export default defineTool({
       .min(1)
       .max(20),
     employeeSlackUserId: z.string().min(1).optional(),
+    standupDate: z.iso.date().optional(),
   }),
   async execute(input, ctx) {
-    const delegation = verifyStandupDelegation(
-      input.delegationToken,
-      ctx.session.parent?.rootSessionId ?? "",
-    );
+    const actorSlackUserId = requireDelegatedSlackActor(ctx.session);
     const { service, workflow } = await getStandupRuntime();
     const created = await service.createEntries(
       input.entries.map((entry, index) => ({
-        actorSlackUserId: delegation.actorSlackUserId,
+        actorSlackUserId,
         employeeSlackUserId: input.employeeSlackUserId,
-        standupDate: delegation.standupDate,
+        standupDate: input.standupDate,
         period: entry.period,
         text: entry.text,
         idempotencyKey: `${ctx.callId}:${index}`,
@@ -39,13 +36,15 @@ export default defineTool({
     const affected = new Set(
       created.map((entry) => `${entry.standupDate}:${entry.period}`),
     );
-    for (const key of affected) {
-      const [standupDate, period] = key.split(":") as [
-        string,
-        "morning" | "evening",
-      ];
-      await workflow.refreshDigest(standupDate, period);
-    }
+    await Promise.all(
+      [...affected].map((key) => {
+        const [standupDate, period] = key.split(":") as [
+          string,
+          "morning" | "evening",
+        ];
+        return workflow.refreshDigest(standupDate, period);
+      }),
+    );
     return { created };
   },
 });

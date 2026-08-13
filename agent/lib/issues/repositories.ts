@@ -362,3 +362,37 @@ export function assertOrganizationRepository(
 export function repositoryRegistryForModel() {
   return issueRepositories.map((repository) => ({ ...repository }));
 }
+
+export function repositoryCandidatesForModel(query: string, limit = 8) {
+  const normalized = query.toLowerCase();
+  const terms = normalized
+    .split(/[^a-z0-9]+/u)
+    .filter((term) => term.length > 2);
+  const ranked = issueRepositories
+    .map((repository) => {
+      const name = repository.slug.slice("manasijatech/".length).toLowerCase();
+      const aliases = repository.aliases.map((alias) => alias.toLowerCase());
+      const descriptiveText = `${repository.productArea} ${repository.role}`.toLowerCase();
+      const score =
+        (normalized.includes(name) ? 20 : 0) +
+        aliases.reduce(
+          (total, alias) => total + (normalized.includes(alias) ? 12 : 0),
+          0,
+        ) +
+        terms.reduce(
+          (total, term) =>
+            total +
+            (name.includes(term) ? 4 : 0) +
+            (aliases.some((alias) => alias.includes(term)) ? 3 : 0) +
+            (descriptiveText.includes(term) ? 1 : 0),
+          0,
+        );
+      return { repository, score };
+    })
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score)
+    .slice(0, limit)
+    .map(({ repository }) => ({ ...repository }));
+
+  return ranked.length > 0 ? ranked : repositoryRegistryForModel();
+}

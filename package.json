@@ -13,6 +13,7 @@
     "build": "eve build",
     "dev": "eve dev",
     "dev:socket": "node --env-file-if-exists=.env scripts/slack-socket-mode.mjs dev",
+    "eval": "eve eval",
     "start": "eve start",
     "start:socket": "node --env-file-if-exists=.env scripts/slack-socket-mode.mjs start",
     "test": "tsc -p tsconfig.test.json && node --test .test-dist/tests/**/*.test.js",

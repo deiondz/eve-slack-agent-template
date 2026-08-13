@@ -1,8 +1,11 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 
-import { requireIssueDelegation } from "../../../lib/issues/delegation-runtime.js";
-import { listCollaborators, runGh } from "../../../lib/issues/github.js";
+import { requireIssueSlackContext } from "../../../lib/issues/delegation.js";
+import {
+  getGitHubUserProfile,
+  listCollaborators,
+} from "../../../lib/issues/github.js";
 import { rankOwnerMatches } from "../../../lib/issues/owners.js";
 import { issueRepositories } from "../../../lib/issues/repositories.js";
 import { listSlackIdentities } from "../../../lib/issues/slack.js";
@@ -14,28 +17,27 @@ export default defineTool({
     repo: z.string().min(1),
   }),
   async execute(input, ctx) {
-    await requireIssueDelegation(ctx.session.parent?.rootSessionId);
-    const collaborators = await listCollaborators(input.repo);
+    requireIssueSlackContext(ctx.session);
+    const [collaborators, slackUsers] = await Promise.all([
+      listCollaborators(input.repo),
+      listSlackIdentities(),
+    ]);
     const registered = issueRepositories.find((repo) => repo.slug === input.repo);
     const logins = registered?.githubContacts.length
       ? registered.githubContacts.filter((contact) => collaborators.includes(contact))
       : collaborators;
     const githubUsers = await Promise.all(
-      logins.map(async (login) => {
-        const output = await runGh(["api", `users/${login}`]);
-        const profile = JSON.parse(output) as { email?: string; login: string; name?: string };
-        return { login: profile.login, name: profile.name, email: profile.email };
-      }),
+      logins.map((login) => getGitHubUserProfile(login)),
     );
-    const slackUsers = await listSlackIdentities();
+    const matches = rankOwnerMatches(githubUsers, slackUsers);
     return {
-      matches: rankOwnerMatches(githubUsers, slackUsers).slice(0, 10),
+      matches: matches.slice(0, 10),
       source: registered?.githubContacts.length
         ? "inventory top-contributor signal; not confirmed ownership"
         : "writable repository collaborators",
       unmatchedGitHubContacts: logins.filter(
         (login) =>
-          !rankOwnerMatches(githubUsers, slackUsers).some(
+          !matches.some(
             (match) => match.githubLogin === login,
           ),
       ),

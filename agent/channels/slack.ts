@@ -24,9 +24,6 @@ export async function dispatchWithTrustedIssueContext(
         message_ts: message.ts,
       },
     },
-    context: [
-      "[TRUSTED_FURGO_ISSUE_CONTEXT] Trusted Slack source metadata is available through get_issue_tracker_delegation.",
-    ],
   };
 }
 

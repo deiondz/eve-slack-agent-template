@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { issueRepositories } from "../agent/lib/issues/repositories.js";
+import {
+  issueRepositories,
+  repositoryCandidatesForModel,
+} from "../agent/lib/issues/repositories.js";
 
 test("repository inventory covers every Manasija repository exactly once", () => {
   assert.equal(issueRepositories.length, 38);
@@ -26,4 +29,14 @@ test("contributor signals are explicitly not represented as ownership", () => {
   const myuki = issueRepositories.find((repo) => repo.slug === "manasijatech/myuki");
   assert.deepEqual(myuki?.githubContacts, ["deiondz"]);
   assert.equal(myuki?.contactBasis, "top contributor signal; not confirmed ownership");
+});
+
+test("repository routing returns a focused semantic shortlist", () => {
+  const candidates = repositoryCandidatesForModel(
+    "The Myuki desktop Electron app crashes during startup",
+  );
+
+  assert.equal(candidates[0]?.slug, "manasijatech/myuki-electron-app");
+  assert.ok(candidates.length <= 8);
+  assert.ok(candidates.every((candidate) => candidate.slug.startsWith("manasijatech/")));
 });

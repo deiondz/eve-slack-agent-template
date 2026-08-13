@@ -116,9 +116,13 @@ export function createStandupService({
     return result.rows[0]?.value ? String(result.rows[0].value) : null;
   }
 
-  async function targetFor(input: EntrySelector): Promise<string> {
+  function authorizeSelector(
+    input: EntrySelector,
+    rosterSnapshot: readonly RosterMember[],
+    today: string,
+  ): { employeeSlackUserId: string; standupDate: string } {
     const memberById = new Map(
-      (await getRoster()).map((member) => [member.slackUserId, member]),
+      rosterSnapshot.map((member) => [member.slackUserId, member]),
     );
     const actor = memberById.get(input.actorSlackUserId);
     if (!actor) throw new Error("This Slack member is not configured for stand-ups.");
@@ -127,19 +131,15 @@ export function createStandupService({
       throw new Error("Employees can manage only their own stand-up entries.");
     }
     if (!memberById.has(target)) throw new Error("The target employee is not configured.");
-    return target;
-  }
-
-  async function dateFor(input: EntrySelector): Promise<string> {
-    const today = standupDateFor(now());
     const requested = input.standupDate ?? today;
-    const actor = (await getRoster()).find(
-      (member) => member.slackUserId === input.actorSlackUserId,
-    );
     if (!isManager(actor) && requested !== today) {
       throw new Error("Employees can manage entries only for the current stand-up day.");
     }
-    return requested;
+    return { employeeSlackUserId: target, standupDate: requested };
+  }
+
+  async function resolveSelector(input: EntrySelector) {
+    return authorizeSelector(input, await getRoster(), standupDateFor(now()));
   }
 
   async function entryForChange(
@@ -156,15 +156,25 @@ export function createStandupService({
       throw new Error("Stand-up entry not found.");
     }
     const entry = rowToEntry(row);
-    await targetFor({
-      actorSlackUserId: input.actorSlackUserId,
-      employeeSlackUserId: entry.employeeSlackUserId,
-    });
+    const rosterSnapshot = await getRoster();
+    const today = standupDateFor(now());
+    authorizeSelector(
+      {
+        actorSlackUserId: input.actorSlackUserId,
+        employeeSlackUserId: entry.employeeSlackUserId,
+      },
+      rosterSnapshot,
+      today,
+    );
     if ((allowDeleted && row.deleted_at) || entry.text === replayText) return entry;
-    await dateFor({
-      actorSlackUserId: input.actorSlackUserId,
-      standupDate: entry.standupDate,
-    });
+    authorizeSelector(
+      {
+        actorSlackUserId: input.actorSlackUserId,
+        standupDate: entry.standupDate,
+      },
+      rosterSnapshot,
+      today,
+    );
     return entry;
   }
 
@@ -188,12 +198,15 @@ export function createStandupService({
       throw new Error("A mixed stand-up update was only partially persisted.");
     }
 
-    const prepared = await Promise.all(inputs.map(async (input) => {
+    const rosterSnapshot = await getRoster();
+    const today = standupDateFor(now());
+    const prepared = inputs.map((input) => {
       const timestamp = now().toISOString();
+      const authorized = authorizeSelector(input, rosterSnapshot, today);
       const entry: StandupEntry = {
         id: randomUUID(),
-        standupDate: await dateFor(input),
-        employeeSlackUserId: await targetFor(input),
+        standupDate: authorized.standupDate,
+        employeeSlackUserId: authorized.employeeSlackUserId,
         period: input.period,
         text: input.text.trim(),
         createdAt: timestamp,
@@ -201,7 +214,7 @@ export function createStandupService({
       };
       if (!entry.text) throw new Error("Stand-up entry text cannot be empty.");
       return { entry, idempotencyKey: input.idempotencyKey };
-    }));
+    });
 
     await client.batch(
       prepared.map(({ entry, idempotencyKey }) => ({
@@ -362,8 +375,7 @@ export function createStandupService({
     createEntries,
 
     async listEntries(input: EntrySelector): Promise<StandupEntry[]> {
-      const employeeSlackUserId = await targetFor(input);
-      const standupDate = await dateFor(input);
+      const { employeeSlackUserId, standupDate } = await resolveSelector(input);
       const conditions = [
         "standup_date = ?",
         "employee_slack_user_id = ?",
@@ -415,8 +427,7 @@ export function createStandupService({
         });
         if (replay.rows[0]) return String(replay.rows[0].standup_date);
       }
-      const employeeSlackUserId = await targetFor(input);
-      const standupDate = await dateFor(input);
+      const { employeeSlackUserId, standupDate } = await resolveSelector(input);
       await client.execute({
         sql: `INSERT INTO standup_acknowledgements
           (standup_date, employee_slack_user_id, period, created_at, idempotency_key)

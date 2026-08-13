@@ -1,50 +1,44 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import {
-  createStandupDelegation,
-  verifyStandupDelegation,
-} from "../agent/lib/standup/delegation.js";
+import { requireDelegatedSlackActor } from "../agent/lib/slack-session.js";
 
-test("signed delegation preserves the authenticated actor and requested day", () => {
-  process.env.STANDUP_DELEGATION_SECRET = "test-secret-with-at-least-32-characters";
-  const issuedAt = new Date("2026-08-13T12:00:00.000Z");
-  const delegation = createStandupDelegation({
-    actorSlackUserId: "U_ALICE",
-    rootSessionId: "session-1",
-    standupDate: "2026-08-12",
-    now: issuedAt,
-  });
-
-  assert.deepEqual(
-    verifyStandupDelegation(
-      delegation.delegationToken,
-      "session-1",
-    ),
-    { actorSlackUserId: "U_ALICE", standupDate: "2026-08-12" },
+test("stand-up specialist recovers the authenticated actor from child-session auth", () => {
+  assert.equal(
+    requireDelegatedSlackActor({
+      auth: {
+        current: {
+          authenticator: "slack-webhook",
+          attributes: { user_id: "U_ALICE" },
+        },
+        initiator: null,
+      },
+      parent: { rootSessionId: "root-session-1" },
+    } as never),
+    "U_ALICE",
   );
 });
 
-test("delegation rejects tampering and use from another root session", () => {
-  process.env.STANDUP_DELEGATION_SECRET = "test-secret-with-at-least-32-characters";
-  const issuedAt = new Date("2026-08-13T12:00:00.000Z");
-  const { delegationToken } = createStandupDelegation({
-    actorSlackUserId: "U_ALICE",
-    rootSessionId: "session-1",
-    now: issuedAt,
-  });
-
+test("stand-up actor recovery rejects untrusted execution contexts", () => {
   assert.throws(
     () =>
-      verifyStandupDelegation(
-        `${delegationToken.slice(0, -1)}x`,
-        "session-1",
-      ),
-    /invalid/i,
+      requireDelegatedSlackActor({
+        auth: {
+          current: {
+            authenticator: "slack-webhook",
+            attributes: { user_id: "U_ALICE" },
+          },
+          initiator: null,
+        },
+      } as never),
+    /delegated specialist/i,
   );
   assert.throws(
     () =>
-      verifyStandupDelegation(delegationToken, "session-2"),
-    /another session/i,
+      requireDelegatedSlackActor({
+        auth: { current: null, initiator: null },
+        parent: { rootSessionId: "root-session-1" },
+      } as never),
+    /authenticated Slack member/i,
   );
 });

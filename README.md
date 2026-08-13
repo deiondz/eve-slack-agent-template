@@ -17,7 +17,7 @@ Copy `.env.example` to `.env`, then configure:
 
 - Run `codex login` on the persistent host. Eve uses that local login to serve
   the pinned `gpt-5.6-luna` model through the Codex backend.
-- Slack credentials and a random `STANDUP_DELEGATION_SECRET`.
+- Slack credentials.
 - `SLACK_DAILY_UPDATES_CHANNEL_ID` and `STANDUP_ROSTER_JSON` as the one-time bootstrap configuration. After the first database initialization, a configured manager can view or change both through Slack chat and the persisted values take precedence.
 - `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` in deployed environments. Local development defaults to `standup.sqlite`.
 - `GH_TOKEN` and `ISSUE_ROUTING_CHANNEL_ID` for Slack-to-GitHub issue tracking. The runtime
@@ -60,13 +60,12 @@ Production schedules run Monday-Friday in `Asia/Kolkata`:
 
 Eve writes Vercel cron expressions in UTC. In development, trigger schedules manually through `POST /eve/v1/dev/schedules/morning-standup`, `evening-standup`, or `evening-reminder`.
 
-The root agent owns Slack and schedules. Stand-up conversations are delegated to the declared `agent/subagents/standup/` specialist, which has the stand-up skill and CRUD tools. The root creates a short-lived signed delegation envelope so child tools authorize against the authenticated Slack actor rather than trusting message text.
+The root agent owns Slack and schedules. Stand-up conversations are delegated to the declared `agent/subagents/standup/` specialist, whose CRUD tools authorize directly against the authenticated Slack context Eve propagates into the child session rather than trusting message text.
 
 Issue reports and assignment follow-ups are delegated to
-`agent/subagents/issue-tracker/`. Slack signs the real reporter and source-thread
-metadata before model dispatch; the root exchanges that context for a
-durable record bound to Eve's root-session lineage, so no credential needs to
-be copied through model tool calls. The specialist's tools constrain GitHub writes to the
+`agent/subagents/issue-tracker/`. Slack authenticates the real reporter and
+source-thread metadata before model dispatch, and Eve propagates that context
+into the child session without an extra model tool call. The specialist's tools constrain GitHub writes to the
 `manasijatech` organization and use `gh` for every GitHub operation. Repository
 routing aliases, product roles, activity signals, and likely context contacts
 for all 38 repositories live in `agent/lib/issues/repositories.ts`. Contributor

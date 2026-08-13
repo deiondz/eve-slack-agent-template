@@ -4,6 +4,28 @@ import { promisify } from "node:util";
 import { assertOrganizationRepository } from "./repositories.js";
 
 const execFileAsync = promisify(execFile);
+const CACHE_TTL_MS = 5 * 60 * 1_000;
+
+interface CacheEntry<T> {
+  expiresAt: number;
+  value: Promise<T>;
+}
+
+const writableRepositoryCache = new Map<string, CacheEntry<unknown>>();
+const githubProfileCache = new Map<string, CacheEntry<GitHubUserProfile>>();
+
+function cached<T>(
+  cache: Map<string, CacheEntry<T>>,
+  key: string,
+  load: () => Promise<T>,
+): Promise<T> {
+  const existing = cache.get(key);
+  if (existing && existing.expiresAt > Date.now()) return existing.value;
+  const value = load();
+  cache.set(key, { expiresAt: Date.now() + CACHE_TTL_MS, value });
+  void value.catch(() => cache.delete(key));
+  return value;
+}
 
 export interface GhRunner {
   (args: readonly string[]): Promise<string>;
@@ -29,6 +51,15 @@ export const runGh: GhRunner = async (args) => {
 
 export async function verifyWritableRepository(repo: string, gh: GhRunner = runGh) {
   assertOrganizationRepository(repo);
+  if (gh === runGh) {
+    return cached(writableRepositoryCache, repo, () =>
+      verifyWritableRepositoryUncached(repo, gh),
+    );
+  }
+  return verifyWritableRepositoryUncached(repo, gh);
+}
+
+async function verifyWritableRepositoryUncached(repo: string, gh: GhRunner) {
   const output = await gh([
     "repo",
     "view",
@@ -57,18 +88,21 @@ export interface GitHubIssueSummary {
 }
 
 export async function listOpenIssues(repo: string, gh: GhRunner = runGh) {
-  await verifyWritableRepository(repo, gh);
-  const output = await gh([
-    "issue",
-    "list",
-    "--repo",
-    repo,
-    "--state",
-    "open",
-    "--limit",
-    "100",
-    "--json",
-    "number,title,body,url",
+  assertOrganizationRepository(repo);
+  const [, output] = await Promise.all([
+    verifyWritableRepository(repo, gh),
+    gh([
+      "issue",
+      "list",
+      "--repo",
+      repo,
+      "--state",
+      "open",
+      "--limit",
+      "100",
+      "--json",
+      "number,title,body,url",
+    ]),
   ]);
   return JSON.parse(output) as GitHubIssueSummary[];
 }
@@ -117,8 +151,12 @@ export interface CreateIssueInput {
 }
 
 export async function createGitHubIssue(input: CreateIssueInput, gh: GhRunner = runGh) {
-  await verifyWritableRepository(input.repo, gh);
-  const existingLabels = new Set(await listRepositoryLabels(input.repo, gh));
+  assertOrganizationRepository(input.repo);
+  const [, repositoryLabels] = await Promise.all([
+    verifyWritableRepository(input.repo, gh),
+    listRepositoryLabels(input.repo, gh),
+  ]);
+  const existingLabels = new Set(repositoryLabels);
   const labels = input.labels.filter((label) => existingLabels.has(label));
   const args = [
     "issue",
@@ -192,8 +230,11 @@ export async function assignGitHubIssue(input: {
   number: number;
   repo: string;
 }, gh: GhRunner = runGh) {
-  await verifyWritableRepository(input.repo, gh);
-  await gh(["api", `repos/${input.repo}/collaborators/${input.assignee}`]);
+  assertOrganizationRepository(input.repo);
+  await Promise.all([
+    verifyWritableRepository(input.repo, gh),
+    gh(["api", `repos/${input.repo}/collaborators/${input.assignee}`]),
+  ]);
   await gh([
     "issue",
     "edit",
@@ -207,13 +248,16 @@ export async function assignGitHubIssue(input: {
 }
 
 export async function listCollaborators(repo: string, gh: GhRunner = runGh) {
-  await verifyWritableRepository(repo, gh);
-  const output = await gh([
-    "api",
-    "--paginate",
-    `repos/${repo}/collaborators?per_page=100`,
-    "--jq",
-    ".[] | @json",
+  assertOrganizationRepository(repo);
+  const [, output] = await Promise.all([
+    verifyWritableRepository(repo, gh),
+    gh([
+      "api",
+      "--paginate",
+      `repos/${repo}/collaborators?per_page=100`,
+      "--jq",
+      ".[] | @json",
+    ]),
   ]);
   const users = output
     .split("\n")
@@ -223,4 +267,18 @@ export async function listCollaborators(repo: string, gh: GhRunner = runGh) {
         JSON.parse(line) as { login: string; permissions?: { push?: boolean } },
     );
   return users.filter((user) => user.permissions?.push).map((user) => user.login);
+}
+
+export interface GitHubUserProfile {
+  email?: string;
+  login: string;
+  name?: string;
+}
+
+export function getGitHubUserProfile(login: string): Promise<GitHubUserProfile> {
+  return cached(githubProfileCache, login, async () => {
+    const output = await runGh(["api", `users/${login}`]);
+    const profile = JSON.parse(output) as GitHubUserProfile;
+    return { login: profile.login, name: profile.name, email: profile.email };
+  });
 }

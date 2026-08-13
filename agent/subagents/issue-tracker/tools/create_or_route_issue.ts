@@ -1,7 +1,7 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 
-import { requireIssueDelegation } from "../../../lib/issues/delegation-runtime.js";
+import { requireIssueSlackContext } from "../../../lib/issues/delegation.js";
 import {
   buildFollowupComment,
   buildIssueBody,
@@ -19,15 +19,26 @@ import {
 import {
   enrichIssueSlackContext,
   getSlackPermalink,
+  routeIssueToSlack,
 } from "../../../lib/issues/slack.js";
+import { assertOrganizationRepository } from "../../../lib/issues/repositories.js";
+
+const ROUTING_CHANNEL_ID =
+  process.env.ISSUE_ROUTING_CHANNEL_ID ?? "C0BPD515TB4";
+
+const suggestedOwnerSchema = z.object({
+  githubLogin: z.string().min(1),
+  slackUserId: z.string().min(1).optional(),
+});
 
 export default defineTool({
   description:
-    "Idempotently create a formatted GitHub issue for this Slack thread or append new evidence to its existing issue.",
+    "Idempotently create or append a GitHub issue for this Slack thread, then route it to the engineering issue channel.",
   inputSchema: z.object({
     repo: z.string().min(1),
     issueType: z.enum(["bug", "enhancement"]),
     title: z.string().min(8).max(140),
+    summary: z.string().min(1).max(500),
     observed: z.string().min(1),
     expected: z.string().optional(),
     reproduction: z.string().optional(),
@@ -36,17 +47,31 @@ export default defineTool({
     repositoryRouting: z.string().min(1),
     needsInfo: z.boolean().default(false),
     existingIssueNumber: z.number().int().positive().optional(),
+    suggestedOwners: z.array(suggestedOwnerSchema).max(10),
   }),
   async execute(input, ctx) {
-    const context = await enrichIssueSlackContext(
-      await requireIssueDelegation(ctx.session.parent?.rootSessionId),
-    );
-    await verifyWritableRepository(input.repo);
-    const permalink = await getSlackPermalink(context);
-    const existing = await findIssueByThreadMarker(
-      input.repo,
-      slackThreadMarker(context),
-    );
+    assertOrganizationRepository(input.repo);
+    const rawContext = requireIssueSlackContext(ctx.session);
+    const [context, permalink, existing] = await Promise.all([
+      enrichIssueSlackContext(rawContext),
+      getSlackPermalink(rawContext),
+      findIssueByThreadMarker(input.repo, slackThreadMarker(rawContext)),
+      verifyWritableRepository(input.repo),
+    ]);
+
+    let result:
+      | {
+          action: "appended" | "reused";
+          issue: { number: number; title: string; url: string };
+          originalThreadPermalink: string;
+        }
+      | {
+          action: "created";
+          issue: { number: number; title: string; url: string };
+          labels: string[];
+          originalThreadPermalink: string;
+        };
+
     if (existing) {
       const messageMarker = slackMessageMarker(context);
       const alreadyRecorded =
@@ -68,14 +93,12 @@ export default defineTool({
           }),
         });
       }
-      return {
+      result = {
         action: alreadyRecorded ? "reused" : "appended",
         issue: { number: existing.number, title: existing.title, url: existing.url },
         originalThreadPermalink: permalink,
       };
-    }
-
-    if (input.existingIssueNumber) {
+    } else if (input.existingIssueNumber) {
       const duplicate = await getGitHubIssue({
         repo: input.repo,
         number: input.existingIssueNumber,
@@ -101,7 +124,7 @@ export default defineTool({
           }),
         });
       }
-      return {
+      result = {
         action: alreadyRecorded ? "reused" : "appended",
         issue: {
           number: duplicate.number,
@@ -110,33 +133,46 @@ export default defineTool({
         },
         originalThreadPermalink: permalink,
       };
+    } else {
+      const labels = [
+        input.issueType === "bug" ? "bug" : "enhancement",
+        "needs-triage",
+        ...(input.needsInfo ? ["needs-info"] : []),
+      ];
+      const created = await createGitHubIssue({
+        repo: input.repo,
+        title: input.title,
+        labels,
+        body: buildIssueBody({
+          context,
+          evidence: input.evidence,
+          environment: input.environment,
+          expected: input.expected,
+          observed: input.observed,
+          reproduction: input.reproduction,
+          repositoryRouting: input.repositoryRouting,
+          slackPermalink: permalink,
+        }),
+      });
+      result = {
+        action: "created",
+        issue: { number: created.number, title: input.title, url: created.url },
+        labels: created.labels,
+        originalThreadPermalink: permalink,
+      };
     }
 
-    const labels = [
-      input.issueType === "bug" ? "bug" : "enhancement",
-      "needs-triage",
-      ...(input.needsInfo ? ["needs-info"] : []),
-    ];
-    const created = await createGitHubIssue({
+    const routing = await routeIssueToSlack({
+      issueType: input.issueType,
+      issueUrl: result.issue.url,
+      originalThreadPermalink: result.originalThreadPermalink,
       repo: input.repo,
-      title: input.title,
-      labels,
-      body: buildIssueBody({
-        context,
-        evidence: input.evidence,
-        environment: input.environment,
-        expected: input.expected,
-        observed: input.observed,
-        reproduction: input.reproduction,
-        repositoryRouting: input.repositoryRouting,
-        slackPermalink: permalink,
-      }),
+      reporterSlackUserId: context.actorSlackUserId,
+      routingChannelId: ROUTING_CHANNEL_ID,
+      summary: input.summary,
+      suggestedOwners: input.suggestedOwners,
+      title: result.issue.title,
     });
-    return {
-      action: "created",
-      issue: { number: created.number, title: input.title, url: created.url },
-      labels: created.labels,
-      originalThreadPermalink: permalink,
-    };
+    return { ...result, routing };
   },
 });

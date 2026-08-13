@@ -7,6 +7,11 @@ import { getSlackUserProfiles } from "../slack-profile.js";
 import type { IssueSlackContext } from "./delegation.js";
 import type { SlackIdentity } from "./owners.js";
 
+const SLACK_IDENTITIES_TTL_MS = 5 * 60 * 1_000;
+let slackIdentitiesCache:
+  | { expiresAt: number; value: Promise<SlackIdentity[]> }
+  | undefined;
+
 function requireSlackResponse(response: SlackApiResponse, operation: string) {
   if (!response.ok) {
     throw new Error(`Slack ${operation} failed: ${String(response.error)}`);
@@ -74,6 +79,21 @@ export function parseSlackIdentities(response: SlackApiResponse): SlackIdentity[
 }
 
 export async function listSlackIdentities(): Promise<SlackIdentity[]> {
+  if (slackIdentitiesCache && slackIdentitiesCache.expiresAt > Date.now()) {
+    return slackIdentitiesCache.value;
+  }
+  const value = loadSlackIdentities();
+  slackIdentitiesCache = {
+    expiresAt: Date.now() + SLACK_IDENTITIES_TTL_MS,
+    value,
+  };
+  void value.catch(() => {
+    slackIdentitiesCache = undefined;
+  });
+  return value;
+}
+
+async function loadSlackIdentities(): Promise<SlackIdentity[]> {
   const identities: SlackIdentity[] = [];
   let cursor: string | undefined;
   do {
@@ -175,6 +195,7 @@ export async function routeIssueToSlack(input: {
 export async function announceIssueAssignment(input: {
   assigneeGithubLogin: string;
   assigneeSlackUserId?: string;
+  idempotencyKey?: string;
   issueUrl: string;
   routingChannelId: string;
 }) {
@@ -188,6 +209,9 @@ export async function announceIssueAssignment(input: {
       operation: "chat.postMessage",
       body: {
         channel: input.routingChannelId,
+        ...(input.idempotencyKey
+          ? { client_msg_id: idempotencyUuid(input.idempotencyKey) }
+          : {}),
         ...(parentTs ? { thread_ts: parentTs } : {}),
         text: `Assigned ${input.issueUrl} to ${assignee}.`,
       },
