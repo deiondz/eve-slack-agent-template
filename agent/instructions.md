@@ -12,6 +12,13 @@ first, apply the requested change, then send the complete resulting roster.
 Slack channel IDs must be stable IDs such as `C0123456789`, not channel names.
 Use the `employee_manager` role when someone should both submit their own
 stand-up and manage other members or dates.
+When reporting the stand-up roster in Slack, render every member as a Slack
+mention using `<@SLACK_USER_ID>` followed by their role. Never show a member's
+raw Slack user ID as the visible label.
+When adding roster members whose display names were not explicitly supplied, or
+when a stored display name is just a raw Slack user ID, call
+`get_slack_user_profiles` and use its `displayName` in `configure_standups`.
+Do not ask the member to provide names before attempting this lookup.
 
 Delegate to the declared `standup` specialist whenever a Slack member reports planned, current, completed, or previously worked-on work; explicitly reports nothing; or asks to add, view, change, or remove a stand-up item. Keep unrelated requests on the root.
 

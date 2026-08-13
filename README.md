@@ -14,7 +14,7 @@ Copy `.env.example` to `.env`, then configure:
 - `SLACK_DAILY_UPDATES_CHANNEL_ID` and `STANDUP_ROSTER_JSON` as the one-time bootstrap configuration. After the first database initialization, a configured manager can view or change both through Slack chat and the persisted values take precedence.
 - `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` in deployed environments. Local development defaults to `standup.sqlite`.
 
-The Slack app needs bot scopes for mentions, posting/updating messages, opening DMs, and reading DM history (`app_mentions:read`, `chat:write`, `im:write`, and `im:history`). Subscribe it to `app_mention` and `message.im` events. For Socket Mode, enable it in the app manifest and create an app-level token with `connections:write`; set that `xapp-...` value as `SLACK_APP_TOKEN` and the installed bot's `xoxb-...` value as `SLACK_BOT_TOKEN`.
+The Slack app needs bot scopes for mentions, posting/updating messages, opening DMs, reading DM history, and resolving member profiles (`app_mentions:read`, `chat:write`, `im:write`, `im:history`, and `users:read`). Subscribe it to `app_mention` and `message.im` events. For Socket Mode, enable it in the app manifest and create an app-level token with `connections:write`; set that `xapp-...` value as `SLACK_APP_TOKEN` and the installed bot's `xoxb-...` value as `SLACK_BOT_TOKEN`.
 
 When using Vercel Connect, link the project and pull environment variables:
 
