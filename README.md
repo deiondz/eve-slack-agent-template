@@ -1,5 +1,11 @@
 This is a multi-workflow Slack agent built with [eve](https://beta.eve.dev). Its first workflow manages appendable morning plans and evening accomplishments for a configured team.
 
+Its second workflow turns authenticated Slack bug reports and concrete feature
+requests into formatted GitHub issues. It maps Myuki reports to the appropriate
+repository, links the original Slack thread, deduplicates retries, posts the
+result to `C0BPD515TB4`, suggests likely owners by matching GitHub collaborators
+to Slack profiles, and waits for an employee to explicitly choose an assignee.
+
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fvercel-labs%2Feve-slack-agent-template%2Ftree%2Fmain&connect=%5B%7B%22type%22%3A%22slack%22%2C%22env%22%3A%22SLACK_CONNECTOR%22%2C%22triggers%22%3Atrue%2C%22triggerPath%22%3A%22%2Feve%2Fv1%2Fslack%22%7D%5D)
 
 
@@ -13,8 +19,12 @@ Copy `.env.example` to `.env`, then configure:
 - Slack credentials and a random `STANDUP_DELEGATION_SECRET`.
 - `SLACK_DAILY_UPDATES_CHANNEL_ID` and `STANDUP_ROSTER_JSON` as the one-time bootstrap configuration. After the first database initialization, a configured manager can view or change both through Slack chat and the persisted values take precedence.
 - `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` in deployed environments. Local development defaults to `standup.sqlite`.
+- `GH_TOKEN`, `ISSUE_TRACKER_DELEGATION_SECRET`, and
+  `ISSUE_ROUTING_CHANNEL_ID` for Slack-to-GitHub issue tracking. The runtime
+  host must have the `gh` CLI installed and authenticated; this workflow is
+  intended for the persistent Socket Mode deployment.
 
-The Slack app needs bot scopes for mentions, posting/updating messages, opening DMs, reading DM history, and resolving member profiles (`app_mentions:read`, `chat:write`, `im:write`, `im:history`, and `users:read`). Subscribe it to `app_mention` and `message.im` events. For Socket Mode, enable it in the app manifest and create an app-level token with `connections:write`; set that `xapp-...` value as `SLACK_APP_TOKEN` and the installed bot's `xoxb-...` value as `SLACK_BOT_TOKEN`.
+The Slack app needs bot scopes for mentions, posting/updating messages, opening DMs, reading DM history, resolving member profiles, and reading channels used for issue routing (`app_mentions:read`, `chat:write`, `im:write`, `im:history`, `users:read`, `users:read.email`, `channels:history`, and `groups:history`). Subscribe it to `app_mention` and `message.im` events. For Socket Mode, enable it in the app manifest and create an app-level token with `connections:write`; set that `xapp-...` value as `SLACK_APP_TOKEN` and the installed bot's `xoxb-...` value as `SLACK_BOT_TOKEN`.
 
 When using Vercel Connect, link the project and pull environment variables:
 
@@ -51,6 +61,15 @@ Production schedules run Monday-Friday in `Asia/Kolkata`:
 Eve writes Vercel cron expressions in UTC. In development, trigger schedules manually through `POST /eve/v1/dev/schedules/morning-standup`, `evening-standup`, or `evening-reminder`.
 
 The root agent owns Slack and schedules. Stand-up conversations are delegated to the declared `agent/subagents/standup/` specialist, which has the stand-up skill and CRUD tools. The root creates a short-lived signed delegation envelope so child tools authorize against the authenticated Slack actor rather than trusting message text.
+
+Issue reports and assignment follow-ups are delegated to
+`agent/subagents/issue-tracker/`. Slack signs the real reporter and source-thread
+metadata before model dispatch; the root exchanges that context for a
+session-bound token. The specialist's tools constrain GitHub writes to the
+`manasijatech` organization and use `gh` for every GitHub operation. Repository
+routing aliases, product roles, activity signals, and likely context contacts
+for all 38 repositories live in `agent/lib/issues/repositories.ts`. Contributor
+signals are presented as contacts, not as confirmed ownership.
 
 Configured managers can say things like “show the stand-up configuration,”
 “use channel `C0123456789` for daily updates,” or “add `<@U123>` to the
