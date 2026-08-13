@@ -56,6 +56,8 @@ Configured managers can say things like “show the stand-up configuration,”
 “use channel `C0123456789` for daily updates,” or “add `<@U123>` to the
 stand-up roster as Sam.” Roster changes are persisted in the stand-up database;
 the agent reads the current roster before applying partial changes.
+Roster roles are `employee`, `manager`, or `employee_manager`; the last option
+both participates in stand-ups and has manager permissions.
 
 You can start editing the agent by modifying `agent/agent.ts`. Its behavior is defined in `agent/instructions.md`, and tools live in `agent/tools/`. The agent auto-updates as you edit the files.
 

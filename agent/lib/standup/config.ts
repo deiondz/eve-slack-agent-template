@@ -6,7 +6,7 @@ const rosterSchema = z.array(
   z.object({
     slackUserId: z.string().min(1),
     displayName: z.string().min(1),
-    role: z.enum(["employee", "manager"]),
+    role: z.enum(["employee", "manager", "employee_manager"]),
   }),
 );
 

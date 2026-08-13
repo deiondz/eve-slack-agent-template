@@ -9,7 +9,7 @@ export type StandupPeriod = "morning" | "evening";
 export interface RosterMember {
   slackUserId: string;
   displayName: string;
-  role: "employee" | "manager";
+  role: "employee" | "manager" | "employee_manager";
 }
 
 export interface StandupEntry {
@@ -71,6 +71,14 @@ function rowToEntry(row: Record<string, unknown>): StandupEntry {
   };
 }
 
+function isManager(member: RosterMember | undefined): boolean {
+  return member?.role === "manager" || member?.role === "employee_manager";
+}
+
+function participatesInStandup(member: RosterMember): boolean {
+  return member.role === "employee" || member.role === "employee_manager";
+}
+
 export function createStandupService({
   client,
   roster,
@@ -93,7 +101,7 @@ export function createStandupService({
     const actor = (await getRoster()).find(
       (member) => member.slackUserId === actorSlackUserId,
     );
-    if (actor?.role !== "manager") {
+    if (!isManager(actor)) {
       throw new Error(
         "Only a configured stand-up manager can change stand-up configuration.",
       );
@@ -115,7 +123,7 @@ export function createStandupService({
     const actor = memberById.get(input.actorSlackUserId);
     if (!actor) throw new Error("This Slack member is not configured for stand-ups.");
     const target = input.employeeSlackUserId ?? input.actorSlackUserId;
-    if (actor.role !== "manager" && target !== input.actorSlackUserId) {
+    if (!isManager(actor) && target !== input.actorSlackUserId) {
       throw new Error("Employees can manage only their own stand-up entries.");
     }
     if (!memberById.has(target)) throw new Error("The target employee is not configured.");
@@ -128,7 +136,7 @@ export function createStandupService({
     const actor = (await getRoster()).find(
       (member) => member.slackUserId === input.actorSlackUserId,
     );
-    if (actor?.role !== "manager" && requested !== today) {
+    if (!isManager(actor) && requested !== today) {
       throw new Error("Employees can manage entries only for the current stand-up day.");
     }
     return requested;
@@ -240,10 +248,32 @@ export function createStandupService({
         CREATE TABLE IF NOT EXISTS standup_roster (
           slack_user_id TEXT PRIMARY KEY,
           display_name TEXT NOT NULL,
-          role TEXT NOT NULL CHECK (role IN ('employee', 'manager')),
+          role TEXT NOT NULL CHECK (role IN ('employee', 'manager', 'employee_manager')),
           position INTEGER NOT NULL
         )
       `);
+      const rosterTable = await client.execute({
+        sql: "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+        args: ["standup_roster"],
+      });
+      const rosterTableSql = String(rosterTable.rows[0]?.sql ?? "");
+      if (!rosterTableSql.includes("employee_manager")) {
+        await client.batch(
+          [
+            "ALTER TABLE standup_roster RENAME TO standup_roster_legacy",
+            `CREATE TABLE standup_roster (
+              slack_user_id TEXT PRIMARY KEY,
+              display_name TEXT NOT NULL,
+              role TEXT NOT NULL CHECK (role IN ('employee', 'manager', 'employee_manager')),
+              position INTEGER NOT NULL
+            )`,
+            `INSERT INTO standup_roster (slack_user_id, display_name, role, position)
+              SELECT slack_user_id, display_name, role, position FROM standup_roster_legacy`,
+            "DROP TABLE standup_roster_legacy",
+          ],
+          "write",
+        );
+      }
       const configurationInitialized = await client.execute({
         sql: "SELECT value FROM standup_settings WHERE key = ?",
         args: ["configuration_initialized"],
@@ -430,7 +460,7 @@ export function createStandupService({
       );
 
       return (await getRoster())
-        .filter((member) => member.role === "employee")
+        .filter(participatesInStandup)
         .map((member) => {
           const employeeEntries = entries.filter(
             (entry) => entry.employeeSlackUserId === member.slackUserId,
@@ -460,7 +490,8 @@ export function createStandupService({
           .map((employee) => employee.employeeSlackUserId),
       );
       return (await getRoster()).filter(
-        (member) => member.role === "employee" && pendingIds.has(member.slackUserId),
+        (member) =>
+          participatesInStandup(member) && pendingIds.has(member.slackUserId),
       );
     },
 
@@ -522,7 +553,7 @@ export function createStandupService({
       if (input.dailyUpdatesChannelId === undefined && input.roster === undefined) {
         throw new Error("Provide a daily updates channel or a stand-up roster.");
       }
-      if (input.roster && !input.roster.some((member) => member.role === "manager")) {
+      if (input.roster && !input.roster.some((member) => isManager(member))) {
         throw new Error("The stand-up roster must include at least one manager.");
       }
 

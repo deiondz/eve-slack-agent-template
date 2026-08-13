@@ -6,7 +6,7 @@ import { getStandupRuntime } from "../lib/standup/runtime.js";
 const rosterMemberSchema = z.object({
   slackUserId: z.string().min(1),
   displayName: z.string().min(1),
-  role: z.enum(["employee", "manager"]),
+  role: z.enum(["employee", "manager", "employee_manager"]),
 });
 
 const inputSchema = z
@@ -31,7 +31,7 @@ const inputSchema = z
 
 export default defineTool({
   description:
-    "Persist stand-up settings supplied in chat. Set the daily-updates Slack channel, replace the complete employee/manager roster, or do both. Only configured stand-up managers may use this tool.",
+    "Persist stand-up settings supplied in chat. Set the daily-updates Slack channel, replace the complete roster, or do both. Use employee_manager when someone should participate in stand-ups and manage the team. Only configured stand-up managers may use this tool.",
   inputSchema,
   async execute(input, ctx) {
     const actorSlackUserId = ctx.session.auth.current?.attributes.user_id;

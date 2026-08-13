@@ -237,3 +237,35 @@ test("persisted configuration is not overwritten by environment seeds", async (t
     { slackUserId: "U_MANAGER", displayName: "Mina", role: "manager" },
   ]);
 });
+
+test("an employee-manager participates and can manage other employees", async (t) => {
+  const client = createClient({ url: "file::memory:" });
+  t.after(() => client.close());
+  const service = createStandupService({
+    client,
+    roster: [
+      { slackUserId: "U_ALICE", displayName: "Alice", role: "employee" },
+      {
+        slackUserId: "U_LEAD",
+        displayName: "Lead",
+        role: "employee_manager",
+      },
+    ],
+  });
+  await service.initialize();
+
+  await service.createEntry({
+    actorSlackUserId: "U_LEAD",
+    employeeSlackUserId: "U_ALICE",
+    standupDate: "2026-08-12",
+    period: "morning",
+    text: "Plan entered by the lead",
+  });
+
+  assert.deepEqual(
+    (await service.getDigest("2026-08-13", "morning")).map(
+      (employee) => employee.employeeSlackUserId,
+    ),
+    ["U_ALICE", "U_LEAD"],
+  );
+});
