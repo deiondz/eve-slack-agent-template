@@ -1,7 +1,7 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 
-import { verifyIssueDelegation } from "../../../lib/issues/delegation.js";
+import { requireIssueDelegation } from "../../../lib/issues/delegation-runtime.js";
 import {
   buildFollowupComment,
   buildIssueBody,
@@ -25,7 +25,6 @@ export default defineTool({
   description:
     "Idempotently create a formatted GitHub issue for this Slack thread or append new evidence to its existing issue.",
   inputSchema: z.object({
-    delegationToken: z.string().min(1),
     repo: z.string().min(1),
     issueType: z.enum(["bug", "enhancement"]),
     title: z.string().min(8).max(140),
@@ -40,10 +39,7 @@ export default defineTool({
   }),
   async execute(input, ctx) {
     const context = await enrichIssueSlackContext(
-      verifyIssueDelegation(
-        input.delegationToken,
-        ctx.session.parent?.rootSessionId ?? "",
-      ),
+      await requireIssueDelegation(ctx.session.parent?.rootSessionId),
     );
     await verifyWritableRepository(input.repo);
     const permalink = await getSlackPermalink(context);

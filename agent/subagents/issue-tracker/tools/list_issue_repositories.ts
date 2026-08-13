@@ -1,19 +1,16 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 
-import { verifyIssueDelegation } from "../../../lib/issues/delegation.js";
+import { requireIssueDelegation } from "../../../lib/issues/delegation-runtime.js";
 import { runGh } from "../../../lib/issues/github.js";
 import { repositoryRegistryForModel } from "../../../lib/issues/repositories.js";
 
 export default defineTool({
   description:
     "List the explicit issue-routing registry and current writable organization repositories.",
-  inputSchema: z.object({ delegationToken: z.string().min(1) }),
-  async execute(input, ctx) {
-    verifyIssueDelegation(
-      input.delegationToken,
-      ctx.session.parent?.rootSessionId ?? "",
-    );
+  inputSchema: z.object({}),
+  async execute(_input, ctx) {
+    await requireIssueDelegation(ctx.session.parent?.rootSessionId);
     const output = await runGh([
       "repo",
       "list",
@@ -37,4 +34,3 @@ export default defineTool({
     return { registry: repositoryRegistryForModel(), repositories };
   },
 });
-

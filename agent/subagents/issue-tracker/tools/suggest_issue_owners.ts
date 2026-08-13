@@ -1,7 +1,7 @@
 import { defineTool } from "eve/tools";
 import { z } from "zod";
 
-import { verifyIssueDelegation } from "../../../lib/issues/delegation.js";
+import { requireIssueDelegation } from "../../../lib/issues/delegation-runtime.js";
 import { listCollaborators, runGh } from "../../../lib/issues/github.js";
 import { rankOwnerMatches } from "../../../lib/issues/owners.js";
 import { issueRepositories } from "../../../lib/issues/repositories.js";
@@ -11,14 +11,10 @@ export default defineTool({
   description:
     "Suggest likely repository contacts by matching inventory contributor signals or writable collaborators to Slack identities. Contacts are not confirmed owners and suggestions never assign.",
   inputSchema: z.object({
-    delegationToken: z.string().min(1),
     repo: z.string().min(1),
   }),
   async execute(input, ctx) {
-    verifyIssueDelegation(
-      input.delegationToken,
-      ctx.session.parent?.rootSessionId ?? "",
-    );
+    await requireIssueDelegation(ctx.session.parent?.rootSessionId);
     const collaborators = await listCollaborators(input.repo);
     const registered = issueRepositories.find((repo) => repo.slug === input.repo);
     const logins = registered?.githubContacts.length

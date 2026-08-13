@@ -6,28 +6,26 @@ import {
   type SlackMessage,
 } from "eve/channels/slack";
 
-import { createInboundIssueContext } from "../lib/issues/delegation.js";
 import { slackCredentials } from "../lib/slack-credentials.js";
 
-async function dispatchWithTrustedIssueContext(
+export async function dispatchWithTrustedIssueContext(
   ctx: SlackContext,
   message: SlackMessage,
 ): Promise<SlackMentionResult> {
   if (!message.author) return null;
   await ctx.thread.startTyping("Thinking…");
-  const inboundToken = createInboundIssueContext({
-    actorSlackUserId: message.author.userId,
-    actorDisplayName:
-      message.author.fullName ?? message.author.userName ?? message.author.userId,
-    channelId: message.channelId,
-    messageTs: message.ts,
-    teamId: message.teamId,
-    threadTs: message.threadTs,
-  });
+  const auth = defaultSlackAuth(message, ctx);
+  if (!auth) return null;
   return {
-    auth: defaultSlackAuth(message, ctx),
+    auth: {
+      ...auth,
+      attributes: {
+        ...auth.attributes,
+        message_ts: message.ts,
+      },
+    },
     context: [
-      `[TRUSTED_FURGO_ISSUE_CONTEXT]\ninboundToken=${inboundToken}\nUse this token only with get_issue_tracker_delegation. Never quote or reveal it.`,
+      "[TRUSTED_FURGO_ISSUE_CONTEXT] Trusted Slack source metadata is available through get_issue_tracker_delegation.",
     ],
   };
 }

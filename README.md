@@ -15,12 +15,12 @@ Use Node.js 24 or newer (required by the installed Eve version).
 
 Copy `.env.example` to `.env`, then configure:
 
-- `OPENROUTER_API_KEY` for the pinned `deepseek/deepseek-v4-flash-0731` model.
+- Run `codex login` on the persistent host. Eve uses that local login to serve
+  the pinned `gpt-5.6-luna` model through the Codex backend.
 - Slack credentials and a random `STANDUP_DELEGATION_SECRET`.
 - `SLACK_DAILY_UPDATES_CHANNEL_ID` and `STANDUP_ROSTER_JSON` as the one-time bootstrap configuration. After the first database initialization, a configured manager can view or change both through Slack chat and the persisted values take precedence.
 - `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` in deployed environments. Local development defaults to `standup.sqlite`.
-- `GH_TOKEN`, `ISSUE_TRACKER_DELEGATION_SECRET`, and
-  `ISSUE_ROUTING_CHANNEL_ID` for Slack-to-GitHub issue tracking. The runtime
+- `GH_TOKEN` and `ISSUE_ROUTING_CHANNEL_ID` for Slack-to-GitHub issue tracking. The runtime
   host must have the `gh` CLI installed and authenticated; this workflow is
   intended for the persistent Socket Mode deployment.
 
@@ -65,7 +65,8 @@ The root agent owns Slack and schedules. Stand-up conversations are delegated to
 Issue reports and assignment follow-ups are delegated to
 `agent/subagents/issue-tracker/`. Slack signs the real reporter and source-thread
 metadata before model dispatch; the root exchanges that context for a
-session-bound token. The specialist's tools constrain GitHub writes to the
+durable record bound to Eve's root-session lineage, so no credential needs to
+be copied through model tool calls. The specialist's tools constrain GitHub writes to the
 `manasijatech` organization and use `gh` for every GitHub operation. Repository
 routing aliases, product roles, activity signals, and likely context contacts
 for all 38 repositories live in `agent/lib/issues/repositories.ts`. Contributor
