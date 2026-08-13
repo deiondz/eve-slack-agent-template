@@ -149,3 +149,36 @@ test("a midday accomplishment waits for the scheduled evening digest", async (t)
   assert.equal(slack.published.length, 1);
   assert.match(slack.published[0]?.text ?? "", /Fixed the production alert/);
 });
+
+test("a manager can explicitly publish a saved morning digest", async (t) => {
+  const client = createClient({ url: "file::memory:" });
+  t.after(() => client.close());
+  const service = createStandupService({
+    client,
+    initialDailyUpdatesChannelId: "C_DAILY",
+    roster: [
+      { slackUserId: "U_ALICE", displayName: "Alice", role: "employee" },
+      { slackUserId: "U_MANAGER", displayName: "Mina", role: "manager" },
+    ],
+  });
+  await service.initialize();
+  const slack = new FakeSlackGateway();
+  const workflow = createStandupWorkflow({ service, slack });
+  await service.createEntry({
+    actorSlackUserId: "U_MANAGER",
+    employeeSlackUserId: "U_ALICE",
+    standupDate: "2026-08-13",
+    period: "morning",
+    text: "Ship the manual publishing fix",
+  });
+
+  await workflow.publishDigest("U_MANAGER", "2026-08-13", "morning");
+
+  assert.equal(slack.published.length, 1);
+  assert.equal(slack.published[0]?.channelId, "C_DAILY");
+  assert.match(slack.published[0]?.text ?? "", /Ship the manual publishing fix/);
+  await assert.rejects(
+    workflow.publishDigest("U_ALICE", "2026-08-13", "morning"),
+    /only a configured stand-up manager/i,
+  );
+});

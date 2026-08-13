@@ -69,6 +69,15 @@ export function createStandupWorkflow({
     ensureDigest,
     refreshDigest,
 
+    async publishDigest(
+      actorSlackUserId: string,
+      standupDate: string,
+      period: StandupPeriod,
+    ) {
+      await service.getConfiguration(actorSlackUserId);
+      return ensureDigest(standupDate, period);
+    },
+
     async runMorning(
       standupDate: string,
       promptEmployee: (slackUserId: string, prompt: string) => Promise<void>,

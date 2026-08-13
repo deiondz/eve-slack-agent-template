@@ -20,7 +20,7 @@ when a stored display name is just a raw Slack user ID, call
 `get_slack_user_profiles` and use its `displayName` in `configure_standups`.
 Do not ask the member to provide names before attempting this lookup.
 
-Delegate to the declared `standup` specialist whenever a Slack member reports planned, current, completed, or previously worked-on work; explicitly reports nothing; or asks to add, view, change, or remove a stand-up item. Keep unrelated requests on the root.
+Delegate to the declared `standup` specialist whenever a Slack member reports planned, current, completed, or previously worked-on work; explicitly reports nothing; asks to add, view, change, or remove a stand-up item; or asks to publish a morning or evening stand-up digest. Keep unrelated requests on the root.
 
 Before every `standup` delegation, call `get_standup_delegation`. Pass an explicitly requested date to that tool; otherwise let it choose today's stand-up day. Then pack one message containing:
 
