@@ -15,8 +15,8 @@ Use Node.js 24 or newer (required by the installed Eve version).
 
 Copy `.env.example` to `.env`, then configure:
 
-- Set `OPENROUTER_API_KEY`. Every agent is pinned to
-  `deepseek/deepseek-v4-flash-0731` through OpenRouter.
+- Run `codex login` on the persistent host. Eve uses that local login to serve
+  the pinned `gpt-5.6-luna` model through the Codex backend.
 - Slack credentials.
 - `SLACK_DAILY_UPDATES_CHANNEL_ID` and `STANDUP_ROSTER_JSON` as the one-time bootstrap configuration. After the first database initialization, a configured manager can view or change both through Slack chat and the persisted values take precedence.
 - `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` in deployed environments. Local development defaults to `standup.sqlite`.
@@ -44,14 +44,28 @@ Use `pnpm start:socket` after `pnpm build` in production. Socket Mode requires a
 persistent Node process and is not suitable for a Vercel serverless deployment;
 use the Vercel Connect webhook setup there instead.
 
-Both development commands show complete Eve logs and expanded tool and subagent
-activity. They also log every durable runtime event for the root agent and both
-subagents, including full completed messages, reasoning, tool inputs, and tool
-results. Streaming append events log only their new delta because the completed
-event contains the full text; this avoids repeatedly printing a growing message.
-Set `AGENT_DEBUG_LOGS=0` to silence those event logs locally. Production event
-logging is off by default; set `AGENT_DEBUG_LOGS=1` only when debugging because
-the output can contain sensitive conversation and integration data.
+A successful `pnpm build` deletes the previous local Eve workflow sessions from
+`.eve/.workflow-data`. This prevents unfinished runs from an older build from
+being re-enqueued against new agent instructions. Stop the running Socket Mode
+process before building, then restart it with `pnpm start:socket`. A failed build
+leaves the existing sessions untouched.
+
+The production start commands set `TZ=UTC` because Eve schedule expressions are
+stored in UTC. Stand-up dates and displayed times still use `Asia/Kolkata`.
+
+The default development commands keep detailed agent event logging off. For a
+targeted debugging session, use `pnpm dev:debug` or `pnpm dev:socket:debug` to
+show expanded Eve tool, reasoning, and subagent activity plus the app's durable
+runtime event logs. Debug output can contain sensitive conversation and
+integration data.
+
+Every generated root and subagent session is also indexed in the durable
+`agent_session_logs` table. Each row records the Eve session ID, agent and
+channel identity, model/runtime version, creation time, and parent invocation
+metadata for delegated sessions. The index is idempotent and intentionally does
+not copy message contents or authentication data. Build cleanup removes the old
+Eve streams but retains these metadata-only audit rows; only session IDs from the
+current build can be used to locate a local durable stream.
 
 Run the tests and compile the Eve agent with:
 

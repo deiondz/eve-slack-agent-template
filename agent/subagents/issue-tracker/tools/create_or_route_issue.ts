@@ -9,10 +9,14 @@ import {
   slackThreadMarker,
 } from "../../../lib/issues/format.js";
 import {
+  discoverIssueIntake,
+  planIssueDiscovery,
+  resolveDuplicateSelection,
+} from "../../../lib/issues/intake.js";
+import {
   commentOnIssue,
   createGitHubIssue,
   findIssueByThreadMarker,
-  getGitHubIssue,
   issueHasCommentMarker,
   verifyWritableRepository,
 } from "../../../lib/issues/github.js";
@@ -31,10 +35,19 @@ const suggestedOwnerSchema = z.object({
   slackUserId: z.string().min(1).optional(),
 });
 
-export default defineTool({
-  description:
-    "Idempotently create or append a GitHub issue for this Slack thread, then route it to the engineering issue channel.",
-  inputSchema: z.object({
+const duplicateDecisionSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("discover") }).strict(),
+  z.object({ kind: z.literal("confirmed_new") }).strict(),
+  z
+    .object({
+      kind: z.literal("select_candidate"),
+      issueNumber: z.number().int().positive(),
+    })
+    .strict(),
+]);
+
+export const createOrRouteIssueInputSchema = z
+  .object({
     repo: z.string().min(1),
     issueType: z.enum(["bug", "enhancement"]),
     title: z.string().min(8).max(140),
@@ -46,9 +59,15 @@ export default defineTool({
     evidence: z.array(z.string().min(1)).max(20).optional(),
     repositoryRouting: z.string().min(1),
     needsInfo: z.boolean().default(false),
-    existingIssueNumber: z.number().int().positive().optional(),
-    suggestedOwners: z.array(suggestedOwnerSchema).max(10),
-  }),
+    duplicateDecision: duplicateDecisionSchema,
+    suggestedOwners: z.array(suggestedOwnerSchema).max(10).default([]),
+  })
+  .strict();
+
+export default defineTool({
+  description:
+    "In one action, discover strong duplicates and repository contacts, idempotently create or append the GitHub issue for this Slack thread, and route it to the engineering issue channel.",
+  inputSchema: createOrRouteIssueInputSchema,
   async execute(input, ctx) {
     assertOrganizationRepository(input.repo);
     const rawContext = requireIssueSlackContext(ctx.session);
@@ -58,6 +77,55 @@ export default defineTool({
       findIssueByThreadMarker(input.repo, slackThreadMarker(rawContext)),
       verifyWritableRepository(input.repo),
     ]);
+
+    const discoveryPlan = planIssueDiscovery({
+      hasConfirmedNewIssue: input.duplicateDecision.kind === "confirmed_new",
+      hasExistingThread: Boolean(existing),
+      hasSuggestedOwners: input.suggestedOwners.length > 0,
+    });
+    const discovery = await discoverIssueIntake({
+      ...discoveryPlan,
+      repo: input.repo,
+      title: input.title,
+      report: [input.title, input.summary, input.observed, input.expected]
+        .filter(Boolean)
+        .join("\n"),
+    });
+    const suggestedOwners = discovery.suggestedOwners ?? input.suggestedOwners;
+    const suggestionSource = discovery.suggestionSource ??
+      (suggestedOwners.length ? "supplied from the tracked Slack thread" : undefined);
+
+    const duplicateSelection = resolveDuplicateSelection({
+      candidates: discovery.candidates,
+      requestedIssueNumber:
+        input.duplicateDecision.kind === "select_candidate"
+          ? input.duplicateDecision.issueNumber
+          : undefined,
+      strongDuplicate: discovery.duplicate,
+    });
+
+    if (!existing && duplicateSelection.kind === "invalid") {
+      return {
+        action: "invalid_duplicate_selection" as const,
+        requestedIssueNumber: duplicateSelection.requestedIssueNumber,
+        candidates: discovery.candidates,
+        suggestedOwners,
+        ...(suggestionSource ? { suggestionSource } : {}),
+      };
+    }
+
+    if (
+      !existing &&
+      duplicateSelection.kind === "none" &&
+      discovery.candidates.length > 0
+    ) {
+      return {
+        action: "needs_duplicate_review" as const,
+        candidates: discovery.candidates,
+        suggestedOwners,
+        ...(suggestionSource ? { suggestionSource } : {}),
+      };
+    }
 
     let result:
       | {
@@ -98,14 +166,8 @@ export default defineTool({
         issue: { number: existing.number, title: existing.title, url: existing.url },
         originalThreadPermalink: permalink,
       };
-    } else if (input.existingIssueNumber) {
-      const duplicate = await getGitHubIssue({
-        repo: input.repo,
-        number: input.existingIssueNumber,
-      });
-      if (duplicate.state !== "OPEN") {
-        throw new Error("The selected duplicate issue is not open.");
-      }
+    } else if (duplicateSelection.kind === "selected") {
+      const duplicate = duplicateSelection.issue;
       const messageMarker = slackMessageMarker(context);
       const alreadyRecorded = await issueHasCommentMarker({
         marker: messageMarker,
@@ -170,9 +232,14 @@ export default defineTool({
       reporterSlackUserId: context.actorSlackUserId,
       routingChannelId: ROUTING_CHANNEL_ID,
       summary: input.summary,
-      suggestedOwners: input.suggestedOwners,
+      suggestedOwners,
       title: result.issue.title,
     });
-    return { ...result, routing };
+    return {
+      ...result,
+      routing,
+      suggestedOwners,
+      ...(suggestionSource ? { suggestionSource } : {}),
+    };
   },
 });

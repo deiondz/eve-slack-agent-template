@@ -518,6 +518,26 @@ export function createStandupService({
         : null;
     },
 
+    async clearDigestMessage(input: {
+      standupDate: string;
+      period: StandupPeriod;
+      channelId: string;
+      messageTs: string;
+    }): Promise<boolean> {
+      const result = await client.execute({
+        sql: `DELETE FROM standup_digest_messages
+          WHERE standup_date = ? AND period = ?
+            AND channel_id = ? AND message_ts = ?`,
+        args: [
+          input.standupDate,
+          input.period,
+          input.channelId,
+          input.messageTs,
+        ],
+      });
+      return result.rowsAffected > 0;
+    },
+
     async saveDigestMessage(input: {
       standupDate: string;
       period: StandupPeriod;

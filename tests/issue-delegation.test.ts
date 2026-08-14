@@ -66,6 +66,36 @@ test("specialist recovers trusted issue context directly from child-session auth
   assert.deepEqual(requireIssueSlackContext(session as never), context);
 });
 
+test("specialist keeps the initiating Slack message context after a HITL reply", () => {
+  const session = {
+    auth: {
+      current: {
+        authenticator: "slack-webhook",
+        attributes: {
+          user_id: context.actorSlackUserId,
+          channel_id: context.channelId,
+          team_id: context.teamId,
+          thread_ts: context.threadTs,
+        },
+      },
+      initiator: {
+        authenticator: "slack-webhook",
+        attributes: {
+          user_id: context.actorSlackUserId,
+          full_name: context.actorDisplayName,
+          channel_id: context.channelId,
+          message_ts: context.messageTs,
+          team_id: context.teamId,
+          thread_ts: context.threadTs,
+        },
+      },
+    },
+    parent: { rootSessionId: "root-session-1" },
+  };
+
+  assert.deepEqual(requireIssueSlackContext(session as never), context);
+});
+
 test("issue context rejects root sessions and non-Slack callers", () => {
   const slackAuth = {
     authenticator: "slack-webhook",
@@ -96,5 +126,19 @@ test("issue context rejects root sessions and non-Slack callers", () => {
         parent: { rootSessionId: "root-session-1" },
       } as never),
     /authenticated Slack member/i,
+  );
+  assert.throws(
+    () =>
+      requireIssueSlackContext({
+        auth: {
+          current: {
+            ...slackAuth,
+            attributes: { ...slackAuth.attributes, user_id: "U_OTHER" },
+          },
+          initiator: slackAuth,
+        },
+        parent: { rootSessionId: "root-session-1" },
+      } as never),
+    /only the initiating Slack member/i,
   );
 });

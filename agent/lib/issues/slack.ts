@@ -5,7 +5,7 @@ import { callSlackApi, type SlackApiResponse } from "eve/channels/slack";
 import { slackCredentials } from "../slack-credentials.js";
 import { getSlackUserProfiles } from "../slack-profile.js";
 import type { IssueSlackContext } from "./delegation.js";
-import type { SlackIdentity } from "./owners.js";
+import type { SlackIdentity, SuggestedIssueOwner } from "./owners.js";
 
 const SLACK_IDENTITIES_TTL_MS = 5 * 60 * 1_000;
 let slackIdentitiesCache:
@@ -147,7 +147,7 @@ export async function routeIssueToSlack(input: {
   repo: string;
   routingChannelId: string;
   summary: string;
-  suggestedOwners: readonly { githubLogin: string; slackUserId?: string }[];
+  suggestedOwners: readonly SuggestedIssueOwner[];
   title: string;
 }) {
   const existingMessageTs = await findRoutedIssueMessage(

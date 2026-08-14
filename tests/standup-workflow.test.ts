@@ -13,6 +13,7 @@ class FakeSlackGateway implements StandupSlackGateway {
   published: Array<{ channelId: string; text: string; messageTs: string }> = [];
   updated: Array<{ channelId: string; messageTs: string; text: string }> = [];
   directMessages: Array<{ slackUserId: string; text: string }> = [];
+  updateError?: Error;
 
   async publishMessage(channelId: string, text: string, _idempotencyKey: string) {
     const messageTs = `message-${this.published.length + 1}`;
@@ -21,6 +22,7 @@ class FakeSlackGateway implements StandupSlackGateway {
   }
 
   async updateMessage(channelId: string, messageTs: string, text: string) {
+    if (this.updateError) throw this.updateError;
     this.updated.push({ channelId, messageTs, text });
   }
 
@@ -28,6 +30,67 @@ class FakeSlackGateway implements StandupSlackGateway {
     this.directMessages.push({ slackUserId, text });
   }
 }
+
+test("a deleted canonical Slack message does not fail a saved stand-up update", async (t) => {
+  const client = createClient({ url: "file::memory:" });
+  t.after(() => client.close());
+  const service = createStandupService({
+    client,
+    initialDailyUpdatesChannelId: "C_DAILY",
+    roster: [
+      { slackUserId: "U_ALICE", displayName: "Alice", role: "employee" },
+      { slackUserId: "U_MANAGER", displayName: "Mina", role: "manager" },
+    ],
+    now: () => new Date("2026-08-14T08:00:00.000Z"),
+  });
+  await service.initialize();
+  const slack = new FakeSlackGateway();
+  const workflow = createStandupWorkflow({ service, slack });
+
+  await workflow.publishDigest("U_MANAGER", "2026-08-14", "morning");
+  slack.updateError = new Error("Slack chat.update failed: message_not_found");
+  await service.createEntry({
+    actorSlackUserId: "U_ALICE",
+    period: "morning",
+    text: "Test Furgo",
+  });
+
+  await assert.doesNotReject(
+    workflow.refreshDigest("2026-08-14", "morning"),
+  );
+  assert.equal(slack.published.length, 2);
+  assert.deepEqual(await service.getDigestMessage("2026-08-14", "morning"), {
+    channelId: "C_DAILY",
+    messageTs: "message-2",
+  });
+});
+
+test("digest refresh still surfaces non-stale Slack failures", async (t) => {
+  const client = createClient({ url: "file::memory:" });
+  t.after(() => client.close());
+  const service = createStandupService({
+    client,
+    initialDailyUpdatesChannelId: "C_DAILY",
+    roster: [
+      { slackUserId: "U_MANAGER", displayName: "Mina", role: "manager" },
+    ],
+  });
+  await service.initialize();
+  const slack = new FakeSlackGateway();
+  const workflow = createStandupWorkflow({ service, slack });
+
+  await workflow.publishDigest("U_MANAGER", "2026-08-14", "morning");
+  slack.updateError = new Error("Slack chat.update failed: invalid_auth");
+
+  await assert.rejects(
+    workflow.refreshDigest("2026-08-14", "morning"),
+    /invalid_auth/u,
+  );
+  assert.deepEqual(await service.getDigestMessage("2026-08-14", "morning"), {
+    channelId: "C_DAILY",
+    messageTs: "message-1",
+  });
+});
 
 test("morning workflow publishes one canonical digest and prompts every employee", async (t) => {
   const client = createClient({ url: "file::memory:" });
@@ -39,6 +102,7 @@ test("morning workflow publishes one canonical digest and prompts every employee
       { slackUserId: "U_ALICE", displayName: "Alice", role: "employee" },
       { slackUserId: "U_BOB", displayName: "Bob", role: "employee" },
     ],
+    now: () => new Date("2026-08-13T08:00:00.000Z"),
   });
   await service.initialize();
   const slack = new FakeSlackGateway();
@@ -214,7 +278,10 @@ test("refreshing today leaves yesterday's evening digest untouched", async (t) =
 
   assert.equal(refreshed, null);
   assert.equal(slack.updated.length, 0);
-  assert.equal(await service.getDigestMessage("2026-08-12", "evening")?.messageTs, "message-1");
+  assert.equal(
+    (await service.getDigestMessage("2026-08-12", "evening"))?.messageTs,
+    "message-1",
+  );
 });
 
 test("a manager can explicitly publish a saved morning digest", async (t) => {

@@ -15,10 +15,36 @@ interface WorkflowOptions {
   slack: StandupSlackGateway;
 }
 
+function isSlackMessageNotFound(error: unknown): boolean {
+  return error instanceof Error && /\bmessage_not_found\b/u.test(error.message);
+}
+
 export function createStandupWorkflow({
   service,
   slack,
 }: WorkflowOptions) {
+  async function publishNewDigest(
+    standupDate: string,
+    period: StandupPeriod,
+    text: string,
+    idempotencyKey = `standup-digest:${standupDate}:${period}`,
+  ) {
+    const dailyUpdatesChannelId = await service.getDailyUpdatesChannelId();
+    const posted = await slack.publishMessage(
+      dailyUpdatesChannelId,
+      text,
+      idempotencyKey,
+    );
+    const reference = {
+      standupDate,
+      period,
+      channelId: dailyUpdatesChannelId,
+      messageTs: posted.messageTs,
+    };
+    await service.saveDigestMessage(reference);
+    return reference;
+  }
+
   async function refreshDigest(standupDate: string, period: StandupPeriod) {
     const employees = await service.getDigest(standupDate, period);
     const text = renderStandupDigest({ standupDate, period, employees });
@@ -26,7 +52,36 @@ export function createStandupWorkflow({
     if (existing) {
       let candidate = text;
       for (;;) {
-        await slack.updateMessage(existing.channelId, existing.messageTs, candidate);
+        try {
+          await slack.updateMessage(
+            existing.channelId,
+            existing.messageTs,
+            candidate,
+          );
+        } catch (error) {
+          if (!isSlackMessageNotFound(error)) throw error;
+          const cleared = await service.clearDigestMessage({
+            standupDate,
+            period,
+            channelId: existing.channelId,
+            messageTs: existing.messageTs,
+          });
+          if (!cleared) {
+            const replacement = await service.getDigestMessage(
+              standupDate,
+              period,
+            );
+            return replacement
+              ? { standupDate, period, ...replacement }
+              : null;
+          }
+          return publishNewDigest(
+            standupDate,
+            period,
+            candidate,
+            `standup-digest-recovery:${standupDate}:${period}:${existing.messageTs}`,
+          );
+        }
         const latest = renderStandupDigest({
           standupDate,
           period,
@@ -35,7 +90,7 @@ export function createStandupWorkflow({
         if (latest === candidate) break;
         candidate = latest;
       }
-      return existing;
+      return { standupDate, period, ...existing };
     }
 
     return null;
@@ -49,20 +104,7 @@ export function createStandupWorkflow({
       period,
       employees: await service.getDigest(standupDate, period),
     });
-    const dailyUpdatesChannelId = await service.getDailyUpdatesChannelId();
-    const posted = await slack.publishMessage(
-      dailyUpdatesChannelId,
-      text,
-      `standup-digest:${standupDate}:${period}`,
-    );
-    const reference = {
-      standupDate,
-      period,
-      channelId: dailyUpdatesChannelId,
-      messageTs: posted.messageTs,
-    };
-    await service.saveDigestMessage(reference);
-    return reference;
+    return publishNewDigest(standupDate, period, text);
   }
 
   return {

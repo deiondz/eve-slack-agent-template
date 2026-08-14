@@ -12,9 +12,7 @@ interface DebugHookContext {
 }
 
 function debugLogsEnabled(): boolean {
-  const configured = process.env.AGENT_DEBUG_LOGS;
-  if (configured !== undefined) return configured === "1";
-  return process.env.NODE_ENV !== "production";
+  return process.env.AGENT_DEBUG_LOGS === "1";
 }
 
 export function logAgentEvent(scope: string, event: unknown, ctx: DebugHookContext): void {

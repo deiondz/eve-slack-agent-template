@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import type { SessionContext } from "eve/tools";
 
-import { requireDelegatedSlackAttributes } from "../slack-session.js";
+import { requireDelegatedSlackInitiatorAttributes } from "../slack-session.js";
 
 export const issueSlackContextSchema = z.object({
   actorSlackUserId: z.string().min(1),
@@ -18,7 +18,7 @@ export type IssueSlackContext = z.infer<typeof issueSlackContextSchema>;
 export function requireIssueSlackContext(
   session: SessionContext["session"],
 ): IssueSlackContext {
-  const attributes = requireDelegatedSlackAttributes(session);
+  const attributes = requireDelegatedSlackInitiatorAttributes(session);
   return issueSlackContextSchema.parse({
     actorSlackUserId: attributes.user_id,
     actorDisplayName:

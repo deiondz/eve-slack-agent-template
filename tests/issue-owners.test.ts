@@ -36,3 +36,11 @@ test("owner matching prioritizes exact identity evidence and keeps fuzzy matches
   );
 });
 
+test("owner matching preserves GitHub-only contacts as assignable suggestions", () => {
+  const matches = rankOwnerMatches(
+    [{ login: "repo-maintainer", name: "Repository Maintainer" }],
+    [{ slackUserId: "U_OTHER", displayName: "Someone Else" }],
+  );
+
+  assert.deepEqual(matches, [{ githubLogin: "repo-maintainer" }]);
+});

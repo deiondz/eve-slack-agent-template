@@ -12,6 +12,11 @@ export interface GitHubIdentity {
   name?: string;
 }
 
+export interface SuggestedIssueOwner {
+  githubLogin: string;
+  slackUserId?: string;
+}
+
 function normalize(value: string | undefined): string {
   return (value ?? "").toLocaleLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -42,9 +47,9 @@ export function rankOwnerMatches(
   slackUsers: readonly SlackIdentity[],
 ) {
   return githubUsers
-    .flatMap((github) => {
+    .map((github) => {
       const githubNames = [normalize(github.login), normalize(github.name)].filter(Boolean);
-      return slackUsers.map((slack) => {
+      const match = slackUsers.map((slack) => {
         const slackNames = [
           normalize(slack.displayName),
           normalize(slack.realName),
@@ -68,13 +73,10 @@ export function rankOwnerMatches(
           score,
           reason: exactEmail ? "exact email" : exactName ? "exact normalized name" : "fuzzy name",
         };
-      });
+      })
+        .filter((candidate) => candidate.score >= 0.58)
+        .sort((left, right) => right.score - left.score)[0];
+      return match ?? { githubLogin: github.login };
     })
-    .filter((match) => match.score >= 0.58)
-    .sort((left, right) => right.score - left.score)
-    .filter(
-      (match, index, all) =>
-        all.findIndex((candidate) => candidate.githubLogin === match.githubLogin) === index,
-    );
+    .sort((left, right) => (right.score ?? -1) - (left.score ?? -1));
 }
-

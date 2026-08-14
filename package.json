@@ -10,18 +10,19 @@
     "#evals/*": "./evals/*"
   },
   "scripts": {
-    "build": "eve build",
-    "dev": "eve dev --logs all --tools full --reasoning full --subagents full --connection-auth full",
-    "dev:socket": "node --env-file-if-exists=.env scripts/slack-socket-mode.mjs dev --logs all --tools full --reasoning full --subagents full --connection-auth full",
+    "build": "node scripts/build.mjs",
+    "dev": "eve dev",
+    "dev:debug": "AGENT_DEBUG_LOGS=1 eve dev --logs all --tools full --reasoning full --subagents full --connection-auth full",
+    "dev:socket": "node --env-file-if-exists=.env scripts/slack-socket-mode.mjs dev",
+    "dev:socket:debug": "AGENT_DEBUG_LOGS=1 node --env-file-if-exists=.env scripts/slack-socket-mode.mjs dev --logs all --tools full --reasoning full --subagents full --connection-auth full",
     "eval": "eve eval",
-    "start": "eve start",
-    "start:socket": "node --env-file-if-exists=.env scripts/slack-socket-mode.mjs start",
+    "start": "TZ=UTC eve start",
+    "start:socket": "TZ=UTC node --env-file-if-exists=.env scripts/slack-socket-mode.mjs start",
     "test": "tsc -p tsconfig.test.json && node --test .test-dist/tests/**/*.test.js",
     "typecheck": "tsc"
   },
   "dependencies": {
     "@libsql/client": "^0.17.4",
-    "@openrouter/ai-sdk-provider": "^3.0.0",
     "@slack/socket-mode": "^3.0.0",
     "@vercel/connect": "0.2.7",
     "ai": "7.0.26",
