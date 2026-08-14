@@ -93,7 +93,7 @@ export default defineTool({
           string,
           "morning" | "evening",
         ];
-        return workflow.refreshDigest(standupDate, period);
+        return workflow.syncDigestAfterMutation(standupDate, period);
       }),
     );
     return { created };

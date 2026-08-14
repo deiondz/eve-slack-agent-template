@@ -18,7 +18,7 @@ export default defineTool({
       entryId: input.entryId,
       text: input.text,
     });
-    await workflow.refreshDigest(updated.standupDate, updated.period);
+    await workflow.syncDigestAfterMutation(updated.standupDate, updated.period);
     return { updated };
   },
 });

@@ -18,7 +18,7 @@ export default defineTool({
       actorSlackUserId,
       entryId: input.entryId,
     });
-    await workflow.refreshDigest(deleted.standupDate, deleted.period);
+    await workflow.syncDigestAfterMutation(deleted.standupDate, deleted.period);
     return { deleted };
   },
 });

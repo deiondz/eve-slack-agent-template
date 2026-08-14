@@ -12,11 +12,11 @@ test("stand-up mutations never ask for identity already carried by the session",
 
   assert.match(
     instructions,
-    /never ask\s+the parent or employee for a Slack user ID/i,
+    /Never ask the employee to\s+provide their own Slack ID/i,
   );
   assert.match(
     instructions,
-    /omit\s+`employeeSlackUserId`; the tool will use the authenticated actor/i,
+    /Omit `employeeSlackUserId`[\s\S]*authenticated session/i,
   );
 });
 
@@ -86,21 +86,21 @@ test("root disables reasoning for latency-sensitive delegation", () => {
 test("root delegates simple mutations without narration or identity prompts", () => {
   const instructions = readProjectFile("agent/instructions.md");
 
-  assert.match(instructions, /call `standup` in the first response/i);
-  assert.match(instructions, /never ask for the\s+member's Slack user ID/i);
-  assert.match(instructions, /call `issue-tracker` in the first response/i);
+  assert.match(instructions, /first response must call `standup`/i);
+  assert.match(instructions, /Do not ask for the member's\s+Slack user ID/i);
+  assert.match(instructions, /Call `issue-tracker` immediately/i);
 });
 
-test("explicit engineering issue intent takes precedence over stand-up language", () => {
+test("first-person work status stays a stand-up unless issue filing is explicit", () => {
   const instructions = readProjectFile("agent/instructions.md");
 
   assert.match(
     instructions,
-    /issue-tracker takes precedence over standup[\s\S]*login loop[\s\S]*issue-tracker/i,
+    /First-person work status is a stand-up update[\s\S]*feature,[\s\S]*bug,[\s\S]*issue/i,
   );
   assert.match(
     instructions,
-    /reporting their own work[\s\S]*not a product issue/i,
+    /only when the member explicitly asks to report, file, or\s+track a concrete product problem/i,
   );
 });
 
@@ -109,9 +109,9 @@ test("declared specialists are invoked as tools and never loaded as skills", () 
 
   assert.match(
     instructions,
-    /`standup` and `issue-tracker` are callable subagent tools, not skills/i,
+    /`standup` and `issue-tracker` are callable specialist tools/i,
   );
-  assert.match(instructions, /never call `load_skill` for either/i);
+  assert.match(instructions, /do not try to load them as skills/i);
 });
 
 test("issue assignment is bound to the authenticated Slack thread", () => {
@@ -136,11 +136,11 @@ test("Slack replies use a terse, result-first interaction contract", () => {
   const standup = readProjectFile("agent/subagents/standup/instructions.md");
 
   assert.match(root, /one to four short lines/i);
-  assert.match(root, /Lead with the result/i);
-  assert.match(root, /Ask at most one focused question/i);
-  assert.match(root, /corrections to the object already established/i);
+  assert.match(root, /Start with the result/i);
+  assert.match(root, /Ask no more than one focused question/i);
+  assert.match(root, /refers to the item\s+already established/i);
   assert.match(issueTracker, /Return the outcome first/i);
-  assert.match(standup, /Return the outcome first/i);
+  assert.match(standup, /Start with the verified finish state/i);
 });
 
 test("Slack progress uses teammate language without exposing internals", () => {
@@ -158,16 +158,16 @@ test("stand-up self-service selectors forbid placeholder identities and invented
 
   assert.match(
     instructions,
-    /`authenticated`, `self`, `me`[\s\S]*never valid Slack user IDs/i,
+    /Never pass a display name,[\s\S]*`authenticated`, `self`, `me`, or a guessed ID/i,
   );
-  assert.match(instructions, /Never infer a date[\s\S]*model's clock/i);
+  assert.match(instructions, /Never derive a date from the model clock/i);
   assert.match(
     instructions,
-    /explicitly requested all matching items, delete all of them/i,
+    /explicitly requested all matching[\s\S]*`standup_delete` once for each matched/i,
   );
   assert.match(
     instructions,
-    /choose `self_current` for every me\/my request without an\s+explicit date/i,
+    /Authenticated employee \| No \| `self_current`/i,
   );
 
   const addTool = readProjectFile(
@@ -196,4 +196,47 @@ test("stand-up self-service selectors forbid placeholder identities and invented
   assert.match(listTool, /literal\("self_explicit_date"\)/u);
   assert.match(listTool, /literal\("employee_current"\)/u);
   assert.match(listTool, /literal\("employee_explicit_date"\)/u);
+});
+
+test("stand-up updates classify status, summarize, and clarify vague work", () => {
+  const root = readProjectFile("agent/instructions.md");
+  const standup = readProjectFile("agent/subagents/standup/instructions.md");
+
+  assert.match(root, /"I'm working on\.\.\."[\s\S]*morning update/i);
+  assert.match(root, /"finished\.\.\."[\s\S]*evening update/i);
+  assert.match(standup, /`morning` \(ongoing\)[\s\S]*"working on"/i);
+  assert.match(standup, /`evening` \(outgoing\/completed\)[\s\S]*"finished"/i);
+  assert.match(standup, /Summarize it; do not copy the message verbatim/i);
+  assert.match(standup, /unclear reference[\s\S]*ask one focused follow-up/i);
+  assert.match(standup, /Never guess the missing work, subject, or result/i);
+});
+
+test("stand-up publication delegates authorization and date resolution to the tool", () => {
+  const root = readProjectFile("agent/instructions.md");
+  const standup = readProjectFile("agent/subagents/standup/instructions.md");
+
+  assert.match(
+    root,
+    /explicit publish request[\s\S]*delegate immediately[\s\S]*do not pre-check manager/i,
+  );
+  assert.match(
+    standup,
+    /any clear request to publish[\s\S]*call `standup_publish`/i,
+  );
+  assert.match(
+    standup,
+    /Do not ask the requester to state or prove\s+they are a manager/i,
+  );
+  assert.match(
+    standup,
+    /tool authorizes the authenticated Slack user/i,
+  );
+  assert.match(
+    standup,
+    /omit `standupDate`[\s\S]*current Asia\/Kolkata date/i,
+  );
+  assert.match(
+    standup,
+    /Do not reject\s+an explicit date as historical/i,
+  );
 });

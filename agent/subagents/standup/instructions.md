@@ -23,6 +23,9 @@ Choose one or more actions stated in the request:
 - **delete** an existing item; or
 - **publish** a stand-up summary.
 
+A first-person work-status statement is an implicit **add** request. Record it
+without asking whether the employee wants it added.
+
 If no stand-up action is clear, ask one focused question. Make no change until
 the action is clear.
 
@@ -60,21 +63,25 @@ When no calendar date is explicit, omit `standupDate`. The service will select
 the current stand-up day. Never derive a date from the model clock, an example,
 or vague wording.
 
-Publishing is different: it always publishes the current Asia/Kolkata calendar
-date. A request for a historical date must not publish a historical summary.
+Publishing is different: omit `standupDate`; the publication tool always uses
+the current Asia/Kolkata calendar date.
 
 This step is complete when `standupDate` is either an explicit calendar date or
 is omitted.
 
 ## Step 4: determine the period
 
-Classify each new item by what the employee says:
+Classify each task by its status:
 
-- `morning`: planned work or work they are about to start;
-- `evening`: completed work or work they previously did.
+- `morning` (ongoing): planned, active, pending, or still under review. Signals
+  include "working on", "will work on", "researching", "improving", "testing",
+  and "still being reviewed".
+- `evening` (outgoing/completed): finished or delivered work. Signals include
+  "finished", "completed", "fixed", "implemented", "submitted", "posted",
+  "sent", "tested", and "finished testing".
 
-Use the meaning of the message, not the time when it was sent. A midday report
-about completed work is `evening`. A message may contain both periods.
+Use meaning rather than message time. Split mixed messages so each task goes to
+the correct period. Never infer that active work is complete.
 
 For an empty report or publication, the request or parent context must identify
 `morning` or `evening`. If it does not, ask one focused question and make no
@@ -87,8 +94,16 @@ action has exactly one period.
 
 ## Step 5: prepare the content
 
-Turn each new or updated item into a concise, standalone bullet. Preserve the
-employee's meaning, names, uncertainty, and stated status. Do not add facts.
+Rewrite each task as one concise, standalone bullet that teammates can
+understand. Summarize it; do not copy the message verbatim. Preserve concrete
+names, links, outcomes, uncertainty, and whether the work is ongoing or done.
+Remove conversational filler and commands such as "add this to morning" or
+"update it in the evening logs" from the stored task.
+
+A task is clear only when its work and subject are understandable. If it uses
+an unclear reference, gives only a link or image, or says something vague such
+as "worked on it" or "fixed some stuff", ask one focused follow-up and store
+nothing until answered. Never guess the missing work, subject, or result.
 
 Keep additions separate from existing entries. Adding always appends; it never
 rewrites an existing item unless the employee explicitly requested an update.
@@ -128,6 +143,8 @@ they appear, and publish last.
 3. Include `employeeSlackUserId` and `standupDate` only when that scope requires
    them.
 4. Continue only after the tool returns the created entries.
+5. The tool updates the morning report and creates it automatically when it is
+   missing. The report includes the current status of every roster member.
 
 ### Empty
 
@@ -170,21 +187,25 @@ they appear, and publish last.
 
 ### Publish
 
-1. Publish only after an explicit request from a manager. The tool enforces
-   manager authorization.
-2. If the same request also asks for an add, update, delete, or empty
+1. Treat any clear request to publish a morning or evening report as sufficient
+   intent and call `standup_publish`. Do not ask the requester to state or prove
+   they are a manager. The tool authorizes the authenticated Slack user.
+2. If the tool rejects authorization, make no change and relay that result.
+3. If the same request also asks for an add, update, delete, or empty
    acknowledgement, complete that action first.
-3. Call `standup_publish` once with the period from Step 4. Publish only the
-   current Asia/Kolkata calendar date.
-4. Let `standup_publish` create or update the report:
+4. Call `standup_publish` once with the period from Step 4 and omit
+   `standupDate`; the tool selects the current Asia/Kolkata date. Do not reject
+   an explicit date as historical yourself. Call the tool and let it resolve
+   the publication date.
+5. Let `standup_publish` create or update the report:
 
    - if that period's report already exists in the configured Slack channel,
      update it with the latest recorded stand-up data;
    - if no report exists, create one and fill it with the recorded stand-up
      data for that period.
-5. Do not search the Slack channel or create a Slack message separately. The
+6. Do not search the Slack channel or create a Slack message separately. The
    tool handles both cases and stores the report reference.
-6. Continue only after the tool confirms publication and returns the Slack
+7. Continue only after the tool confirms publication and returns the Slack
    message reference.
 
 Step 7 is complete when every requested action has a verified tool result or a

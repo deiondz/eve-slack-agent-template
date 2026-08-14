@@ -107,9 +107,35 @@ export function createStandupWorkflow({
     return publishNewDigest(standupDate, period, text);
   }
 
+  async function syncDigestAfterMutation(
+    standupDate: string,
+    period: StandupPeriod,
+  ) {
+    return period === "morning"
+      ? ensureDigest(standupDate, period)
+      : refreshDigest(standupDate, period);
+  }
+
+  async function runReminder(
+    standupDate: string,
+    period: StandupPeriod,
+    promptEmployee: (slackUserId: string, prompt: string) => Promise<void>,
+  ): Promise<void> {
+    await ensureDigest(standupDate, period);
+    const pending = await service.listPendingEmployees(standupDate, period);
+    const prompt =
+      period === "morning"
+        ? `Reminder: please share what you are planning to work on today (${standupDate}), even if there is nothing to report.`
+        : `Reminder: please share what you worked on today (${standupDate}), even if there is nothing to report.`;
+    await Promise.all(
+      pending.map((employee) => promptEmployee(employee.slackUserId, prompt)),
+    );
+  }
+
   return {
     ensureDigest,
     refreshDigest,
+    syncDigestAfterMutation,
 
     async publishDigest(
       actorSlackUserId: string,
@@ -152,19 +178,18 @@ export function createStandupWorkflow({
       );
     },
 
+    async runMorningReminder(
+      standupDate: string,
+      promptEmployee: (slackUserId: string, prompt: string) => Promise<void>,
+    ): Promise<void> {
+      await runReminder(standupDate, "morning", promptEmployee);
+    },
+
     async runEveningReminder(
       standupDate: string,
       promptEmployee: (slackUserId: string, prompt: string) => Promise<void>,
     ): Promise<void> {
-      const pending = await service.listPendingEmployees(standupDate, "evening");
-      await Promise.all(
-        pending.map((employee) =>
-          promptEmployee(
-            employee.slackUserId,
-            `Reminder: please share what you worked on today (${standupDate}), even if there is nothing to report.`,
-          ),
-        ),
-      );
+      await runReminder(standupDate, "evening", promptEmployee);
     },
   };
 }

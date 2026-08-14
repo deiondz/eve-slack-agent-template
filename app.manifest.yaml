@@ -1,0 +1,48 @@
+_metadata:
+  major_version: 1
+
+display_information:
+  name: Furgo 2.0
+  description: Stand-ups, reviews, and bug routing
+  background_color: "#d32600"
+  long_description: Furgo is a headless, self-hosted Slack work assistant for small teams. It collects stand-up updates, coordinates review requests and personal tasks, and routes explicit bug reports into one configured Slack channel.
+
+features:
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+  bot_user:
+    display_name: Furgo
+    always_online: true
+  agent_view:
+    agent_description: Furgo helps teams collect stand-up updates, coordinate reviews and personal tasks, and route explicit bug reports.
+    suggested_prompts: []
+
+oauth_config:
+  scopes:
+    bot:
+      - assistant:write
+      - app_mentions:read
+      - channels:history
+      - chat:write
+      - groups:history
+      - im:history
+      - im:write
+      - users:read
+      - users:read.email
+
+settings:
+  event_subscriptions:
+    request_url: https://sketch.manasijatech.com/eve/v1/slack
+    bot_events:
+      - app_home_opened
+      - app_mention
+      - message.im
+  interactivity:
+    is_enabled: true
+    request_url: https://sketch.manasijatech.com/eve/v1/slack
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
+  is_mcp_enabled: false

@@ -21,43 +21,56 @@ Copy `.env.example` to `.env`, then configure:
 - `SLACK_DAILY_UPDATES_CHANNEL_ID` and `STANDUP_ROSTER_JSON` as the one-time bootstrap configuration. After the first database initialization, a configured manager can view or change both through Slack chat and the persisted values take precedence.
 - `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN` in deployed environments. Local development defaults to `standup.sqlite`.
 - `GH_TOKEN` and `ISSUE_ROUTING_CHANNEL_ID` for Slack-to-GitHub issue tracking. The runtime
-  host must have the `gh` CLI installed and authenticated; this workflow is
-  intended for the persistent Socket Mode deployment.
+  host must have the `gh` CLI installed and authenticated.
 
-The Slack app needs bot scopes for mentions, posting/updating messages, opening DMs, reading DM history, resolving member profiles, and reading channels used for issue routing (`app_mentions:read`, `chat:write`, `im:write`, `im:history`, `users:read`, `users:read.email`, `channels:history`, and `groups:history`). Subscribe it to `app_mention` and `message.im` events. For Socket Mode, enable it in the app manifest and create an app-level token with `connections:write`; set that `xapp-...` value as `SLACK_APP_TOKEN` and the installed bot's `xoxb-...` value as `SLACK_BOT_TOKEN`.
+The Slack app uses the HTTP Events API. Its event and interactive request URL is
+`https://sketch.manasijatech.com/eve/v1/slack`. Create or update the app from
+[`app.manifest.yaml`](./app.manifest.yaml); the manifest includes the required
+bot scopes, subscribes to `app_mention` and `message.im`, enables interactive
+callbacks, and explicitly disables Socket Mode.
 
-When using Vercel Connect, link the project and pull environment variables:
+Deploy the agent at the public URL before Slack verifies the request URL. Then
+install the app to the workspace and copy its Bot User OAuth Token and Signing
+Secret to `SLACK_BOT_TOKEN` and `SLACK_SIGNING_SECRET`. Eve verifies every HTTP
+request with Slack's signing secret before dispatching it.
+
+Eve recommends Vercel Connect for managed Slack credentials. To use it instead
+of direct credentials, create a Slack client with triggers, attach the Eve Slack
+route, and set the returned client UID as `SLACK_CONNECTOR`:
 
 ```bash
-vercel link
-vercel env pull
+vercel connect create slack --triggers
+vercel connect detach <uid> --yes
+vercel connect attach <uid> --triggers --trigger-path /eve/v1/slack --yes
 ```
 
-Then, run the development server:
+`SLACK_CONNECTOR` takes precedence over `SLACK_BOT_TOKEN` and
+`SLACK_SIGNING_SECRET` when both are present.
+
+Run the development server with:
 
 ```bash
-pnpm dev:socket
+pnpm dev
 ```
 
-`dev:socket` starts Eve and a Socket Mode client in one long-running process.
-Use `pnpm start:socket` after `pnpm build` in production. Socket Mode requires a
-persistent Node process and is not suitable for a Vercel serverless deployment;
-use the Vercel Connect webhook setup there instead.
+Slack cannot reach a local-only server. For live Slack testing, deploy the app
+or expose the local server through a trusted HTTPS tunnel and temporarily update
+both request URLs in the Slack app settings. Run `pnpm start` after `pnpm build`
+on a persistent production host.
 
 A successful `pnpm build` deletes the previous local Eve workflow sessions from
 `.eve/.workflow-data`. This prevents unfinished runs from an older build from
-being re-enqueued against new agent instructions. Stop the running Socket Mode
-process before building, then restart it with `pnpm start:socket`. A failed build
-leaves the existing sessions untouched.
+being re-enqueued against new agent instructions. Stop the running Eve process
+before building, then restart it with `pnpm start`. A failed build leaves the
+existing sessions untouched.
 
 The production start commands set `TZ=UTC` because Eve schedule expressions are
 stored in UTC. Stand-up dates and displayed times still use `Asia/Kolkata`.
 
 The default development commands keep detailed agent event logging off. For a
-targeted debugging session, use `pnpm dev:debug` or `pnpm dev:socket:debug` to
-show expanded Eve tool, reasoning, and subagent activity plus the app's durable
-runtime event logs. Debug output can contain sensitive conversation and
-integration data.
+targeted debugging session, use `pnpm dev:debug` to show expanded Eve tool,
+reasoning, and subagent activity plus the app's durable runtime event logs.
+Debug output can contain sensitive conversation and integration data.
 
 Every generated root and subagent session is also indexed in the durable
 `agent_session_logs` table. Each row records the Eve session ID, agent and
@@ -78,10 +91,11 @@ pnpm build
 Production schedules run Monday-Friday in `Asia/Kolkata`:
 
 - 09:40 — create/update the Morning digest and DM every employee.
-- 16:40 — create/update the Evening digest and request accomplishments.
-- 17:00 — remind only employees still awaiting an evening response.
+- 10:20 — refresh the Morning digest and remind employees still awaiting an update.
+- 16:30 — create/update the Evening digest and request accomplishments.
+- 17:00 — refresh the Evening digest and remind employees still awaiting an update.
 
-Eve writes Vercel cron expressions in UTC. In development, trigger schedules manually through `POST /eve/v1/dev/schedules/morning-standup`, `evening-standup`, or `evening-reminder`.
+Eve writes production cron expressions in UTC. In development, trigger schedules manually through `POST /eve/v1/dev/schedules/morning-standup`, `morning-reminder`, `evening-standup`, or `evening-reminder`.
 
 The root agent owns Slack and schedules. Stand-up conversations are delegated to the declared `agent/subagents/standup/` specialist, whose CRUD tools authorize directly against the authenticated Slack context Eve propagates into the child session rather than trusting message text.
 

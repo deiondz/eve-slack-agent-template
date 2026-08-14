@@ -33,7 +33,7 @@ export default defineTool({
       standupDate: input.standupDate,
       idempotencyKey: ctx.callId,
     });
-    await workflow.refreshDigest(standupDate, input.period);
+    await workflow.syncDigestAfterMutation(standupDate, input.period);
     return { acknowledged: true, standupDate, period: input.period };
   },
 });

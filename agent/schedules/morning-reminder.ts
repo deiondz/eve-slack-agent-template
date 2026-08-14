@@ -5,12 +5,12 @@ import { getStandupRuntime } from "../lib/standup/runtime.js";
 import { createScheduledEmployeePrompter } from "../lib/standup/scheduled-prompter.js";
 
 export default defineSchedule({
-  // 16:30 Asia/Kolkata, Monday-Friday. Vercel evaluates cron in UTC.
-  cron: "0 11 * * 1-5",
+  // 10:20 Asia/Kolkata, Monday-Friday. Vercel evaluates cron in UTC.
+  cron: "50 4 * * 1-5",
   run({ receive, waitUntil, appAuth }) {
     waitUntil(
       getStandupRuntime().then(({ workflow }) =>
-        workflow.runEveningPrompt(
+        workflow.runMorningReminder(
           standupDateFor(),
           createScheduledEmployeePrompter(receive, appAuth),
         ),

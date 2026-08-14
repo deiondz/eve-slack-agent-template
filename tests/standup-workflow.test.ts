@@ -135,6 +135,36 @@ test("morning workflow publishes one canonical digest and prompts every employee
   assert.match(slack.updated[0]?.text ?? "", /• Ship the onboarding fix/);
 });
 
+test("a morning update creates the report when the scheduled report is missing", async (t) => {
+  const client = createClient({ url: "file::memory:" });
+  t.after(() => client.close());
+  const service = createStandupService({
+    client,
+    initialDailyUpdatesChannelId: "C_DAILY",
+    roster: [
+      { slackUserId: "U_ALICE", displayName: "Alice", role: "employee" },
+      { slackUserId: "U_BOB", displayName: "Bob", role: "employee" },
+    ],
+    now: () => new Date("2026-08-14T08:00:00.000Z"),
+  });
+  await service.initialize();
+  const slack = new FakeSlackGateway();
+  const workflow = createStandupWorkflow({ service, slack });
+
+  await service.createEntry({
+    actorSlackUserId: "U_ALICE",
+    period: "morning",
+    text: "Complete the GitHub issue workflow",
+  });
+  await workflow.syncDigestAfterMutation("2026-08-14", "morning");
+
+  assert.equal(slack.published.length, 1);
+  assert.match(slack.published[0]?.text ?? "", /<@U_ALICE>/);
+  assert.match(slack.published[0]?.text ?? "", /Complete the GitHub issue workflow/);
+  assert.match(slack.published[0]?.text ?? "", /<@U_BOB>/);
+  assert.match(slack.published[0]?.text ?? "", /Awaiting update/);
+});
+
 test("evening reminder goes only to employees still awaiting an update", async (t) => {
   const client = createClient({ url: "file::memory:" });
   t.after(() => client.close());
@@ -183,6 +213,40 @@ test("evening reminder goes only to employees still awaiting an update", async (
       text: "Reminder: please share what you worked on today (2026-08-13), even if there is nothing to report.",
     },
   ]);
+  assert.equal(slack.published.length, 1);
+  assert.match(slack.published[0]?.text ?? "", /^Evening stand-up/u);
+});
+
+test("morning reminder publishes a missing report and prompts only pending employees", async (t) => {
+  const client = createClient({ url: "file::memory:" });
+  t.after(() => client.close());
+  const service = createStandupService({
+    client,
+    initialDailyUpdatesChannelId: "C_DAILY",
+    roster: [
+      { slackUserId: "U_ALICE", displayName: "Alice", role: "employee" },
+      { slackUserId: "U_BOB", displayName: "Bob", role: "employee" },
+    ],
+    now: () => new Date("2026-08-14T04:50:00.000Z"),
+  });
+  await service.initialize();
+  const slack = new FakeSlackGateway();
+  const workflow = createStandupWorkflow({ service, slack });
+
+  await service.createEntry({
+    actorSlackUserId: "U_ALICE",
+    period: "morning",
+    text: "Improve the stand-up scheduler",
+  });
+  await workflow.runMorningReminder("2026-08-14", (slackUserId, text) =>
+    slack.sendDirectMessage(slackUserId, text),
+  );
+
+  assert.deepEqual(slack.directMessages.map(({ slackUserId }) => slackUserId), [
+    "U_BOB",
+  ]);
+  assert.equal(slack.published.length, 1);
+  assert.match(slack.published[0]?.text ?? "", /Improve the stand-up scheduler/u);
 });
 
 test("a midday accomplishment waits for the scheduled evening digest", async (t) => {
